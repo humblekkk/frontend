@@ -674,7 +674,7 @@ const getStepMeta = (status) => stepStatusMeta[status] || stepStatusMeta.idle
           <button class="hdr-btn danger" @click="clearSnapshot">清空记录</button>
         </template>
 
-        <div class="nav-logo">✨ 智课</div>
+        <div class="nav-logo">✨ 知微智课</div>
       </div>
     </header>
 

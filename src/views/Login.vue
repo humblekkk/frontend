@@ -121,7 +121,7 @@ const handleLogin = async () => {
 
           <div class="brand-text">
             <p class="brand-eyebrow">AI TEACHING PLATFORM</p>
-            <h1 class="brand-title">AI互动<br><em>智课系统</em></h1>
+            <h1 class="brand-title">AI互动<br><em>知微智课</em></h1>
             <p class="brand-desc">以人工智能重塑教与学的边界<br>让每一次课堂都成为专属体验</p>
           </div>
 
@@ -152,7 +152,7 @@ const handleLogin = async () => {
         <div class="glass-card">
           <div class="card-header">
             <h2>欢迎回来</h2>
-            <p>请登录以继续使用智课平台</p>
+            <p>请登录以继续使用知微智课</p>
           </div>
 
           <div class="hint-bar">

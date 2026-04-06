@@ -168,7 +168,7 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
     <!-- ── Top nav ─────────────────────────────── -->
     <header class="top-nav">
       <div class="nav-left">
-        <div class="nav-logo" @click="goHome">✦ 智课</div>
+        <div class="nav-logo" @click="goHome">✦ 知微智课</div>
         <nav class="nav-links">
           <a class="nav-link active">已有课程</a>
           <a class="nav-link" @click="goLearningPath">学习路径</a>
