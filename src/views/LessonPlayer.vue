@@ -291,8 +291,6 @@ const handleQaFinished = async (payload) => {
   lessonStore.setExplainStatus('qa')
   if (payload?.understandingLevel) lessonStore.setLearningProgress({ understandingLevel: payload.understandingLevel })
   if (payload?.answerId) lastQaRecordId.value = payload.answerId
-  if (payload?.targetSectionId) lessonStore.setCurrentSection(payload.targetSectionId)
-  if (Number.isInteger(payload?.targetPage)) lessonStore.setCurrentPage(payload.targetPage)
   if (Array.isArray(payload?.suggestions) && payload.suggestions.length) {
     quickReviewPoints.value = [...new Set([...quickReviewPoints.value, ...payload.suggestions])].slice(0, 6)
   }
