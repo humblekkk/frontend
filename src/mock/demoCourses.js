@@ -15,10 +15,10 @@ export const GENERATED_SMART_LESSON = Object.freeze({
   lessonId: 'lesson-star-orbit-001',
   courseId: 'course-star-orbit-001',
   lessonTitle: '星轨探微',
-  fileName: '双星问题的资料.pptx',
+  fileName: '双星问题.pptx',
   totalPages: 13,
   previewBasePath: '/双星问题',
-  downloadUrl: '/双星问题的资料.pptx',
+  downloadUrl: '/双星问题.pptx',
   sections: [
     {
       sectionId: 'star-sec-1',

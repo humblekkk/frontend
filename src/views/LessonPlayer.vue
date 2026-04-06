@@ -37,6 +37,12 @@ let hideControlsTimer = null
 let previewPollTimer = null
 let progressTrackTimer = null
 
+const BLOCKED_NOTE_SUGGESTIONS = new Set(['这个答案是演示数据吗？'])
+const sanitizeQuickReviewPoints = (points = []) => points.filter((point) => {
+  const normalizedPoint = String(point || '').trim()
+  return normalizedPoint && !BLOCKED_NOTE_SUGGESTIONS.has(normalizedPoint)
+})
+
 const normalizeQuery = (v, d = '') => (Array.isArray(v) ? v[0] || d : (typeof v === 'string' ? v : d))
 const syncContext = () => {
   lessonStore.syncPlatformContext({
@@ -130,12 +136,16 @@ const loadNote = () => {
     const payload = JSON.parse(raw)
     noteText.value = payload.text || ''
     noteSavedAt.value = payload.savedAt || ''
-    quickReviewPoints.value = Array.isArray(payload.quickPoints) ? payload.quickPoints : []
+    quickReviewPoints.value = sanitizeQuickReviewPoints(Array.isArray(payload.quickPoints) ? payload.quickPoints : [])
   } catch { localStorage.removeItem(noteStorageKey.value) }
 }
 const persistNote = () => {
   if (typeof window === 'undefined') return
-  localStorage.setItem(noteStorageKey.value, JSON.stringify({ text: noteText.value, savedAt: noteSavedAt.value, quickPoints: quickReviewPoints.value }))
+  localStorage.setItem(noteStorageKey.value, JSON.stringify({
+    text: noteText.value,
+    savedAt: noteSavedAt.value,
+    quickPoints: sanitizeQuickReviewPoints(quickReviewPoints.value),
+  }))
 }
 const saveNote = () => { noteSavedAt.value = new Date().toISOString(); persistNote(); ElMessage.success('笔记已保存') }
 const clearNote = () => { noteText.value = ''; noteSavedAt.value = ''; quickReviewPoints.value = []; persistNote() }
@@ -292,7 +302,9 @@ const handleQaFinished = async (payload) => {
   if (payload?.understandingLevel) lessonStore.setLearningProgress({ understandingLevel: payload.understandingLevel })
   if (payload?.answerId) lastQaRecordId.value = payload.answerId
   if (Array.isArray(payload?.suggestions) && payload.suggestions.length) {
-    quickReviewPoints.value = [...new Set([...quickReviewPoints.value, ...payload.suggestions])].slice(0, 6)
+    quickReviewPoints.value = sanitizeQuickReviewPoints(
+      [...new Set([...quickReviewPoints.value, ...payload.suggestions])].slice(0, 6),
+    )
   }
   persistNote()
   scheduleLearningProgressReport({ qaRecordId: payload?.answerId || '' })

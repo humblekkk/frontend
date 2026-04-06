@@ -535,7 +535,6 @@ export const askLessonQuestion = async (payload = {}) => {
     relatedKnowledge: currentSection.keywords.length ? currentSection.keywords : ['双星系统', '万有引力', '圆周运动'],
     understandingLevel: '理解中等',
     suggestions: [
-      STAR_ORBIT_DEMO_QUESTION,
       '双星系统有哪些基本特点？',
       '为什么两颗恒星会绕共同中心运动？',
     ],
