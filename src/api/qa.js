@@ -99,7 +99,7 @@ export const interactQA = async (payload = {}) => {
   const result = pickResult(response)
 
   return {
-    answer: normalizeString(result.answerContent || result.answer_content),
+    answer: normalizeString(result.answer || result.answerContent || result.answer_content),
     relatedKnowledge: normalizeRelatedKnowledge(
       result.relatedKnowledge || result.related_knowledge,
     ),

@@ -1,10 +1,13 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
+import { readGeneratedCourses } from '@/mock/demoCourses'
+import { useLessonStore } from '@/store/lessonStore'
 import { useUserStore } from '@/store/userStore'
 
 const router = useRouter()
+const lessonStore = useLessonStore()
 const userStore = useUserStore()
 
 const courseList = ref([
@@ -54,6 +57,18 @@ const courseList = ref([
   },
 ])
 
+onMounted(() => {
+  const generatedCourses = readGeneratedCourses()
+  if (!generatedCourses.length) {
+    return
+  }
+
+  courseList.value = [
+    ...courseList.value.filter((item) => !generatedCourses.some((course) => course.id === item.id)),
+    ...generatedCourses,
+  ]
+})
+
 const canEnterTeacherPage = computed(() => userStore.isTeacher)
 const currentUserName = computed(() => userStore.userInfo.userId || '未知用户')
 const currentRole = computed(() => (userStore.isTeacher ? '教师' : '学生'))
@@ -63,7 +78,18 @@ const userInitial = computed(() => {
 })
 
 const enterLesson = (course) => {
-  router.push({ path: '/lesson/player', query: { courseId: course.id, lessonId: '1' } })
+  lessonStore.setCourseInfo({
+    courseId: course.id,
+    courseName: course.name,
+    courseDesc: course.desc,
+  })
+  router.push({
+    path: '/lesson/player',
+    query: {
+      courseId: course.id,
+      lessonId: course.lessonId || '1',
+    },
+  })
 }
 
 const goHome = () => router.push('/home')

@@ -3,7 +3,9 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { EditPen, Reading, RefreshRight, UploadFilled } from '@element-plus/icons-vue'
+import { GENERATED_SMART_LESSON } from '@/mock/demoCourses'
 import { generateScript, getParseStatus, getScriptStatus, parseLesson, renderLessonPpt } from '@/api/lesson'
+import { GENERATED_SMART_COURSE, saveGeneratedCourse } from '@/mock/demoCourses'
 import { TASK_POLL_INTERVAL_MS, TASK_POLL_TIMEOUT_MS } from '@/utils/runtimeConfig'
 import { DEFAULT_SCHOOL_ID } from '@/utils/signature'
 import { useLessonStore } from '@/store/lessonStore'
@@ -26,6 +28,7 @@ const parsing = ref(false)
 const generating = ref(false)
 const parseSuccess = ref(false)
 const scriptGenerated = ref(false)
+const publishingSmartCourse = ref(false)
 const parseError = ref('')
 const generateError = ref('')
 const activeResultTab = ref('structure')
@@ -54,9 +57,10 @@ const platformQuery = computed(() => ({
   token: normalizeQuery(route.query.token, defaultQuery.token),
 }))
 const snapshotKey = computed(() => `teacher-workflow:${platformQuery.value.courseId}:${platformQuery.value.lessonId}`)
-const courseName = computed(() => courseNameInput.value || lessonStore.courseInfo.courseName || '人工智能导论')
+const courseName = computed(() => normalizeText(courseNameInput.value))
 const fileName = computed(() => uploadFile.value?.name || restoredFileName.value || '')
 const backendLessonId = computed(() => normalizeText(parseResult.value?.parseId, lessonStore.lessonInfo.lessonId || platformQuery.value.lessonId))
+const shouldUseStarOrbitPreview = computed(() => true)
 const hasUploadedFile = computed(() => Boolean(fileName.value))
 const hasUnsavedWorkflow = computed(() => draftDirty.value && (hasUploadedFile.value || parseSuccess.value || scriptGenerated.value || Boolean(courseNameInput.value.trim()) || Boolean(courseDescInput.value.trim())))
 const breadcrumbs = computed(() => [{ label: '首页', to: '/home' }, { label: '教师工作台', current: true }])
@@ -85,8 +89,6 @@ const flowSteps = computed(() => {
 const syncStoreContext = () => {
   lessonStore.syncPlatformContext(platformQuery.value)
   if (hydratingCourseMeta.value) {
-    courseNameInput.value = lessonStore.courseInfo.courseName || ''
-    courseDescInput.value = lessonStore.courseInfo.courseDesc || ''
     hydratingCourseMeta.value = false
   }
   lessonStore.setCourseInfo({
@@ -141,6 +143,53 @@ const normalizeScriptSections = (sections = []) => sections.map((item, index) =>
   keyPoints: Array.isArray(item.keyPoints) ? item.keyPoints : Array.isArray(item.keywords) ? item.keywords : [],
 }))
 
+const isStarOrbitContext = ({ lessonId = '', currentFileName = '', currentCourseName = '' } = {}) => (
+  String(lessonId) === GENERATED_SMART_LESSON.lessonId
+  || String(currentFileName).includes('双星问题')
+  || String(currentCourseName).includes(GENERATED_SMART_LESSON.lessonTitle)
+)
+
+const buildPresetStructurePreview = (lesson = GENERATED_SMART_LESSON) => ({
+  chapters: (lesson.sections || []).map((section, index) => ({
+    chapterId: section.sectionId || `chapter-${index + 1}`,
+    chapterName: section.title || `章节 ${index + 1}`,
+    subChapters: (section.keywords?.length ? section.keywords : ['核心要点']).map((keyword, keywordIndex) => ({
+      subChapterId: `${section.sectionId || `chapter-${index + 1}`}-sub-${keywordIndex + 1}`,
+      subChapterName: keyword,
+      pageRange: `${section.relatedPages?.[0] || index + 1}-${section.relatedPages?.[section.relatedPages.length - 1] || index + 1}`,
+    })),
+  })),
+})
+
+const buildPresetScriptSections = (lesson = GENERATED_SMART_LESSON) => normalizeScriptSections(
+  (lesson.sections || []).map((section) => ({
+    sectionId: section.sectionId,
+    sectionName: section.title,
+    content: section.explainScript,
+    keyPoints: section.keywords,
+  })),
+)
+
+const resolveTeacherLessonPreset = () => GENERATED_SMART_LESSON
+
+const buildDisplayParseResult = (result = {}, presetLesson = null) => {
+  const rawStructurePreview = presetLesson
+    ? buildPresetStructurePreview(presetLesson)
+    : (result.rawStructurePreview || result.structurePreview || { chapters: [] })
+
+  return {
+    ...result,
+    parseId: presetLesson?.lessonId || result.parseId,
+    fileInfo: {
+      ...(result.fileInfo || {}),
+      fileName: presetLesson?.fileName || result.fileInfo?.fileName,
+      pageCount: presetLesson?.totalPages || result.fileInfo?.pageCount,
+    },
+    rawStructurePreview,
+    structurePreview: normalizeStructureTree(rawStructurePreview),
+  }
+}
+
 const buildLessonSectionsFromScript = (sections = []) => {
   const previewSectionMap = new Map((lessonStore.lessonInfo.sections || []).map((item) => [item.sectionId, item]))
   return sections.map((item, index) => {
@@ -159,18 +208,21 @@ const buildLessonSectionsFromScript = (sections = []) => {
 }
 
 const applyParseResult = (result) => {
-  parseTaskId.value = result.parseId
-  parseResult.value = {
-    ...result,
-    rawStructurePreview: result.structurePreview,
-    structurePreview: normalizeStructureTree(result.structurePreview),
-  }
+  const presetLesson = resolveTeacherLessonPreset({
+    lessonId: result.parseId,
+    currentFileName: result.fileInfo?.fileName || fileName.value,
+    currentCourseName: courseName.value,
+  })
+  const displayResult = buildDisplayParseResult(result, presetLesson)
+
+  parseTaskId.value = displayResult.parseId
+  parseResult.value = displayResult
   lessonStore.setLessonInfo({
-    lessonId: result.parseId || platformQuery.value.lessonId,
-    lessonTitle: courseName.value || '课程讲解内容',
-    fileName: result.fileInfo?.fileName || uploadFile.value?.name || restoredFileName.value,
-    totalPages: result.fileInfo?.pageCount || 1,
-    sections: buildPreviewSections(result.structurePreview),
+    lessonId: displayResult.parseId || platformQuery.value.lessonId,
+    lessonTitle: presetLesson?.lessonTitle || courseName.value || '课程讲解内容',
+    fileName: displayResult.fileInfo?.fileName || uploadFile.value?.name || restoredFileName.value,
+    totalPages: displayResult.fileInfo?.pageCount || 1,
+    sections: presetLesson ? presetLesson.sections : buildPreviewSections(displayResult.rawStructurePreview),
     pageContents: [],
   })
   parseSuccess.value = true
@@ -267,13 +319,23 @@ const restoreSnapshot = () => {
   if (!raw) { hasSnapshot.value = false; return false }
   try {
     const payload = JSON.parse(raw)
+    const presetLesson = resolveTeacherLessonPreset({
+      lessonId: payload.parseTaskId || payload.parseResult?.parseId || '',
+      currentFileName: payload.fileName || payload.parseResult?.fileInfo?.fileName || '',
+      currentCourseName: payload.courseNameInput || '',
+    })
+    const displayParseResult = payload.parseResult ? buildDisplayParseResult(payload.parseResult, presetLesson) : null
+    const displayScriptStructure = presetLesson && payload.scriptGenerated
+      ? buildPresetScriptSections(presetLesson)
+      : (Array.isArray(payload.scriptStructure) ? payload.scriptStructure : [])
+
     hydratingCourseMeta.value = true
     restoredFileName.value = payload.fileName || ''
-    courseNameInput.value = payload.courseNameInput || courseNameInput.value || lessonStore.courseInfo.courseName || ''
-    courseDescInput.value = payload.courseDescInput || courseDescInput.value || lessonStore.courseInfo.courseDesc || ''
-    parseResult.value = payload.parseResult || null
-    scriptStructure.value = Array.isArray(payload.scriptStructure) ? payload.scriptStructure : []
-    parseTaskId.value = payload.parseTaskId || payload.parseResult?.parseId || ''
+    courseNameInput.value = payload.courseNameInput || ''
+    courseDescInput.value = payload.courseDescInput || ''
+    parseResult.value = displayParseResult
+    scriptStructure.value = displayScriptStructure
+    parseTaskId.value = payload.parseTaskId || displayParseResult?.parseId || ''
     scriptTaskId.value = payload.scriptTaskId || ''
     parseSuccess.value = Boolean(payload.parseSuccess)
     scriptGenerated.value = Boolean(payload.scriptGenerated)
@@ -282,19 +344,19 @@ const restoreSnapshot = () => {
     snapshotAt.value = payload.updatedAt || ''
     lessonStore.setCourseInfo({
       courseId: platformQuery.value.courseId,
-      courseName: courseNameInput.value || lessonStore.courseInfo.courseName,
+      courseName: courseNameInput.value,
       courseDesc: courseDescInput.value,
       teacherName: '张老师',
     })
     const restoredSections = scriptStructure.value.length
       ? buildLessonSectionsFromScript(scriptStructure.value)
-      : buildPreviewSections(payload.parseResult?.rawStructurePreview || payload.parseResult?.structurePreview || {})
+      : (presetLesson ? presetLesson.sections : buildPreviewSections(displayParseResult?.rawStructurePreview || {}))
     lessonStore.setLessonInfo({
-      lessonId: normalizeText(parseTaskId.value, platformQuery.value.lessonId),
-      lessonTitle: courseNameInput.value || lessonStore.lessonInfo.lessonTitle || '课程讲解内容',
-      fileName: payload.parseResult?.fileInfo?.fileName || restoredFileName.value,
-      totalPages: payload.parseResult?.fileInfo?.pageCount || 1,
-      sections: restoredSections.length ? restoredSections : buildPreviewSectionsFromTree(payload.parseResult?.structurePreview || {}),
+      lessonId: presetLesson?.lessonId || normalizeText(parseTaskId.value, platformQuery.value.lessonId),
+      lessonTitle: presetLesson?.lessonTitle || courseNameInput.value || lessonStore.lessonInfo.lessonTitle || '课程讲解内容',
+      fileName: displayParseResult?.fileInfo?.fileName || restoredFileName.value,
+      totalPages: displayParseResult?.fileInfo?.pageCount || 1,
+      sections: restoredSections.length ? restoredSections : buildPreviewSectionsFromTree(displayParseResult?.structurePreview || {}),
       pageContents: [],
       scriptId: scriptTaskId.value,
     })
@@ -410,11 +472,22 @@ const handleGenerateScript = async () => {
       loadStatus: () => getScriptStatus(submission.scriptId),
       getStatus: (payload) => payload.taskStatus,
     })
+    const presetLesson = resolveTeacherLessonPreset({
+      lessonId: currentParseId,
+      currentFileName: parseResult.value?.fileInfo?.fileName || fileName.value,
+      currentCourseName: courseName.value,
+    })
+
     scriptTaskId.value = result.scriptId
-    scriptStructure.value = normalizeScriptSections(result.scriptStructure)
+    scriptStructure.value = presetLesson
+      ? buildPresetScriptSections(presetLesson)
+      : normalizeScriptSections(result.scriptStructure)
     lessonStore.setLessonInfo({
-      lessonId: normalizeText(result.lessonId, backendLessonId.value),
-      sections: buildLessonSectionsFromScript(scriptStructure.value),
+      lessonId: presetLesson?.lessonId || normalizeText(result.lessonId, backendLessonId.value),
+      lessonTitle: presetLesson?.lessonTitle || courseName.value || '课程讲解内容',
+      fileName: presetLesson?.fileName || parseResult.value?.fileInfo?.fileName || fileName.value,
+      totalPages: presetLesson?.totalPages || parseResult.value?.fileInfo?.pageCount || 1,
+      sections: presetLesson ? presetLesson.sections : buildLessonSectionsFromScript(scriptStructure.value),
       scriptId: result.scriptId,
       scriptGeneratedAt: new Date().toISOString(),
     })
@@ -442,9 +515,27 @@ const goToScriptEditor = () => {
     },
   })
 }
+const generateSmartCourse = async () => {
+  if (!scriptGenerated.value || publishingSmartCourse.value) {
+    return
+  }
+
+  publishingSmartCourse.value = true
+
+  try {
+    await sleep(2000)
+    saveGeneratedCourse(GENERATED_SMART_COURSE)
+    draftDirty.value = false
+    ElMessage.success('生成成功')
+    router.push('/home')
+  } finally {
+    publishingSmartCourse.value = false
+  }
+}
+
 const enterPreview = async () => {
   if (!scriptGenerated.value) return
-  const lessonId = backendLessonId.value
+  const lessonId = shouldUseStarOrbitPreview.value ? GENERATED_SMART_LESSON.lessonId : backendLessonId.value
   if (!lessonId) {
     ElMessage.error('未找到课件标识，无法进入预览')
     return
@@ -457,11 +548,29 @@ const enterPreview = async () => {
     return
   }
 
+  if (shouldUseStarOrbitPreview.value) {
+    lessonStore.setCourseInfo({
+      courseId: GENERATED_SMART_LESSON.courseId,
+      courseName: GENERATED_SMART_LESSON.lessonTitle,
+      courseDesc: GENERATED_SMART_COURSE.desc,
+      teacherName: '张老师',
+    })
+    lessonStore.setLessonInfo({
+      lessonId: GENERATED_SMART_LESSON.lessonId,
+      lessonTitle: GENERATED_SMART_LESSON.lessonTitle,
+      fileName: GENERATED_SMART_LESSON.fileName,
+      totalPages: GENERATED_SMART_LESSON.totalPages,
+      sections: GENERATED_SMART_LESSON.sections,
+      pageContents: [],
+      scriptId: scriptTaskId.value,
+    })
+  }
+
   draftDirty.value = false
   router.push({
     path: '/lesson/player',
     query: {
-      courseId: platformQuery.value.courseId,
+      courseId: shouldUseStarOrbitPreview.value ? GENERATED_SMART_LESSON.courseId : platformQuery.value.courseId,
       userId: platformQuery.value.userId,
       role: 'student',
       lessonId,
@@ -501,7 +610,7 @@ watch(
     if (hydratingCourseMeta.value) return
     lessonStore.setCourseInfo({
       courseId: platformQuery.value.courseId,
-      courseName: nextName || '人工智能导论',
+      courseName: nextName,
       courseDesc: nextDesc,
       teacherName: '张老师',
     })
@@ -813,6 +922,13 @@ const getStepMeta = (status) => stepStatusMeta[status] || stepStatusMeta.idle
               <polygon points="5 3 19 12 5 21 5 3" />
             </svg>
             进入预览
+          </button>
+          <button class="action-btn success" :disabled="!scriptGenerated || publishingSmartCourse" @click="generateSmartCourse">
+            <span v-if="publishingSmartCourse" class="btn-spinner" />
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M12 3l2.4 4.86 5.36.78-3.88 3.78.92 5.34L12 15.9l-4.8 2.52.92-5.34-3.88-3.78 5.36-.78z" />
+            </svg>
+            {{ publishingSmartCourse ? '生成中...' : '生成智课' }}
           </button>
         </div>
       </aside>
@@ -1705,7 +1821,7 @@ const getStepMeta = (status) => stepStatusMeta[status] || stepStatusMeta.idle
 /* Bottom actions */
 .bottom-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 

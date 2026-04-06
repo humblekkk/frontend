@@ -1,9 +1,11 @@
+import { GENERATED_SMART_LESSON } from '@/mock/demoCourses'
 import { mockCourseInfo, mockLessonMeta } from '@/mock/data'
 
 const STORAGE_KEY = 'smart-class-demo-state-v1'
 const KNOWLEDGE_BASE_KEY = 'smart-class-demo-kb-v1'
 const FAKE_AI_DELAY_MS = 5000
-const FAKE_AI_ANSWER = '原神牛逼'
+const STAR_ORBIT_DEMO_QUESTION = '什么是双星问题'
+const STAR_ORBIT_DEMO_ANSWER = '双星系统是指两颗恒星依靠两者之间的万有引力环绕着共同中心在各自圆轨道上稳定运行的恒星系统。双星系统由两颗相距较近的恒星组成，在相互之间的万有引力作用下，绕连线上的一点做周期相同的匀速圆周运动。'
 const PARSE_TASK_DELAY_MS = 4800
 const SCRIPT_TASK_DELAY_MS = 5600
 
@@ -38,6 +40,22 @@ const writeStorageJson = (key, value) => {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+const normalizeQuestionText = (value = '') => String(value).replace(/[？?。！!，,、\s]/g, '').trim()
+
+const resolveDemoAnswer = (question = '') => {
+  const normalizedQuestion = normalizeQuestionText(question)
+  const normalizedPresetQuestion = normalizeQuestionText(STAR_ORBIT_DEMO_QUESTION)
+
+  if (!normalizedQuestion || normalizedQuestion === normalizedPresetQuestion) {
+    return STAR_ORBIT_DEMO_ANSWER
+  }
+
+  if (normalizedQuestion.includes('双星问题') || normalizedQuestion.includes('双星系统')) {
+    return STAR_ORBIT_DEMO_ANSWER
+  }
+
+  return STAR_ORBIT_DEMO_ANSWER
+}
 
 const normalizeSectionPages = (pages = [], fallbackPage = 1) => {
   const normalized = [...new Set(
@@ -79,7 +97,35 @@ const buildScriptStructure = (sections = [], opening = '') => sections.map((sect
   keyPoints: Array.isArray(section.keywords) ? section.keywords.filter(Boolean) : [],
 }))
 
+const isStarOrbitLesson = ({ lessonId = '', fileName = '', courseName = '' } = {}) => (
+  String(lessonId) === GENERATED_SMART_LESSON.lessonId
+  || String(fileName).includes('双星问题')
+  || String(courseName).includes('星轨探微')
+)
+
 const buildDefaultLesson = (lessonId = mockLessonMeta.lessonId || 'lesson-demo-001', overrides = {}) => {
+  if (isStarOrbitLesson({
+    lessonId,
+    fileName: overrides.fileName,
+    courseName: overrides.lessonTitle,
+  })) {
+    const sections = normalizeSections(overrides.sections || GENERATED_SMART_LESSON.sections || [])
+
+    return {
+      lessonId: lessonId || GENERATED_SMART_LESSON.lessonId,
+      courseId: overrides.courseId || GENERATED_SMART_LESSON.courseId,
+      lessonTitle: overrides.lessonTitle || GENERATED_SMART_LESSON.lessonTitle,
+      fileName: overrides.fileName || GENERATED_SMART_LESSON.fileName,
+      totalPages: Number(overrides.totalPages || GENERATED_SMART_LESSON.totalPages || 13),
+      sections,
+      previewBasePath: overrides.previewBasePath || GENERATED_SMART_LESSON.previewBasePath,
+      downloadUrl: overrides.downloadUrl || GENERATED_SMART_LESSON.downloadUrl,
+      lastParseId: lessonId,
+      lastScriptId: '',
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
   const sections = normalizeSections(overrides.sections || mockLessonMeta.sections || [])
 
   return {
@@ -178,16 +224,23 @@ const resolveTaskStatus = (task) => {
   return Date.now() >= task.readyAt ? 'completed' : 'processing'
 }
 
-export const getHomeAssistantReply = async () => {
+export const getHomeAssistantReply = async (question = '') => {
   await wait(FAKE_AI_DELAY_MS)
-  return FAKE_AI_ANSWER
+  return resolveDemoAnswer(question)
 }
 
 export const parseUploadedLesson = async (payload = {}) => {
   const fileName = payload.fileName || payload.file?.name || 'demo-lesson.pdf'
-  const lessonId = String(payload.lessonId || `lesson-demo-${Date.now()}`)
+  const shouldUseStarOrbitLesson = isStarOrbitLesson({
+    lessonId: payload.lessonId,
+    fileName,
+    courseName: payload.courseName,
+  })
+  const lessonId = String(payload.lessonId || (
+    shouldUseStarOrbitLesson ? GENERATED_SMART_LESSON.lessonId : `lesson-demo-${Date.now()}`
+  ))
   const lesson = buildDefaultLesson(lessonId, {
-    courseId: payload.courseId || mockCourseInfo.courseId,
+    courseId: payload.courseId || (shouldUseStarOrbitLesson ? GENERATED_SMART_LESSON.courseId : mockCourseInfo.courseId),
     lessonTitle: payload.courseName || fileName.replace(/\.[^.]+$/, '') || 'Demo Lesson',
     fileName,
   })
@@ -380,6 +433,11 @@ export const getLessonPreviewUrl = (lessonId = '', slideNumber = 1, params = {})
   const lesson = ensureLesson(String(lessonId || mockLessonMeta.lessonId || 'lesson-demo-001'))
   const page = clamp(Number(slideNumber || 1), 1, Number(lesson.totalPages || 1))
   const section = lesson.sections.find((item) => item.relatedPages.includes(page)) || lesson.sections[0]
+
+  if (lesson.previewBasePath) {
+    return `${lesson.previewBasePath}/${page}.png`
+  }
+
   const paramSummary = Object.entries(params)
     .map(([key, value]) => `${key}=${value}`)
     .join(' · ')
@@ -413,6 +471,10 @@ export const getLessonPreviewUrl = (lessonId = '', slideNumber = 1, params = {})
 
 export const getLessonDownloadLink = (lessonId = '') => {
   const lesson = ensureLesson(String(lessonId || mockLessonMeta.lessonId || 'lesson-demo-001'))
+  if (lesson.downloadUrl) {
+    return lesson.downloadUrl
+  }
+
   const content = [
     'Smart Class Demo Export',
     `Course: ${lesson.lessonTitle}`,
@@ -464,22 +526,23 @@ export const askLessonQuestion = async (payload = {}) => {
   const currentSection = lesson.sections.find((item) => item.sectionId === payload.currentSectionId) || lesson.sections[0]
   const matchedPage = currentSection.relatedPages?.[0] || Number(payload.currentPage || 1) || 1
   const answerId = `answer-${Date.now()}`
+  const question = String(payload.question || payload.questionContent || '').trim()
 
   await wait(FAKE_AI_DELAY_MS)
 
   return {
-    answer: FAKE_AI_ANSWER,
-    relatedKnowledge: currentSection.keywords.length ? currentSection.keywords : ['Demo', 'Preset', 'Frontend'],
+    answer: resolveDemoAnswer(question),
+    relatedKnowledge: currentSection.keywords.length ? currentSection.keywords : ['双星系统', '万有引力', '圆周运动'],
     understandingLevel: '理解中等',
     suggestions: [
-      '这个答案是演示数据吗？',
-      '能继续播放下一段吗？',
-      '我接下来应该复习什么？',
+      STAR_ORBIT_DEMO_QUESTION,
+      '双星系统有哪些基本特点？',
+      '为什么两颗恒星会绕共同中心运动？',
     ],
     answerId,
     questionType: payload.questionType || 'text',
     nextAction: '继续当前章节',
-    reason: '当前问答为前端演示数据，未接入真实模型或知识检索。',
+    reason: '当前问答为前端预置演示答案，未接入真实模型或知识检索。',
     matchedSectionId: currentSection.sectionId,
     matchedPage,
     targetSectionId: currentSection.sectionId,
