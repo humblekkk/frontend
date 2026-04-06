@@ -64,6 +64,15 @@ const routes = [
     },
   },
   {
+    path: '/teacher/data-feedback',
+    name: 'DataFeedback',
+    component: () => import('@/views/DataFeedback.vue'),
+    meta: {
+      label: '数据反哺',
+      roles: ['teacher'],
+    },
+  },
+  {
     path: '/lesson/player',
     name: 'LessonPlayer',
     component: () => import('@/views/LessonPlayer.vue'),

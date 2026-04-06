@@ -1,185 +1,175 @@
-export const learningPathOverview = {
-  completionRate: 68,
-  streakDays: 12,
-  weeklyHours: 9.5,
-  nextMilestone: '完成“神经网络基础”阶段测验',
+const seededRandom = (seed) => {
+  let s = seed
+  return () => {
+    s = (s * 16807 + 0) % 2147483647
+    return (s - 1) / 2147483646
+  }
 }
 
-export const learningPathStages = [
-  {
-    id: 'stage-1',
-    phase: '阶段 01',
-    title: 'AI 基础认知',
-    progress: 100,
-    status: 'completed',
-    duration: '第 1-2 周',
-    focus: '建立概念框架，理解 AI、机器学习与深度学习之间的关系。',
-    modules: ['人工智能概览', '机器学习范式', '典型应用场景'],
-    outcome: '已完成 3/3 个模块',
-  },
-  {
-    id: 'stage-2',
-    phase: '阶段 02',
-    title: '数学与建模基础',
-    progress: 76,
-    status: 'active',
-    duration: '第 3-5 周',
-    focus: '补足线性代数、概率统计与优化的关键直觉，支撑后续模型理解。',
-    modules: ['向量与矩阵', '概率分布', '梯度下降'],
-    outcome: '推荐优先复习“梯度下降”与“损失函数”',
-  },
-  {
-    id: 'stage-3',
-    phase: '阶段 03',
-    title: '神经网络基础',
-    progress: 42,
-    status: 'upcoming',
-    duration: '第 6-8 周',
-    focus: '从单层感知机过渡到多层网络，理解前向传播与反向传播。',
-    modules: ['感知机', '多层网络', '反向传播'],
-    outcome: '解锁条件：完成数学基础阶段',
-  },
-  {
-    id: 'stage-4',
-    phase: '阶段 04',
-    title: '项目实战与复盘',
-    progress: 8,
-    status: 'planned',
-    duration: '第 9-12 周',
-    focus: '围绕真实案例完成一次完整建模流程，形成可复用的方法论。',
-    modules: ['数据清洗', '模型训练', '实验复盘'],
-    outcome: '结项输出：项目报告 + 讲解视频',
-  },
-]
+const hashCode = (str) => {
+  let hash = 0
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
+}
 
-export const learningPathMilestones = [
-  {
-    id: 'm-1',
-    title: '下一次测验',
-    detail: '周四 19:30 · 神经网络基础随堂测',
-    accent: '#2563eb',
+const COURSE_PROFILES = {
+  'course-1': {
+    name: '人工智能导论',
+    unit: 'AI 核心原理与感知机模型',
+    audience: '大一(2)班',
+    studentCount: 45,
+    totalPages: 18,
+    topicKeywords: ['感知机', '激活函数', '梯度下降'],
+    queries: [
+      '"老师，为什么 sigmoid 函数要取指数？直接用线性不行吗？"',
+      '"反向传播的链式法则跟高数里的一样吗？"',
+      '"损失函数最小化和梯度下降是什么关系？"',
+    ],
+    clusters: [
+      { label: '错因 1：激活函数理解偏差', desc: '将 sigmoid 与 ReLU 的适用场景混淆', pct: 38, count: 17 },
+      { label: '错因 2：反向传播链路不清', desc: '不理解梯度如何从输出层逐层回传', pct: 36, count: 16 },
+      { label: '错因 3：数学基础薄弱', desc: '偏导数与链式求导运算困难', pct: 26, count: 12 },
+    ],
+    advices: [
+      { tag: '可视化增强', tagClass: 'tag-visual', title: '增加计算图动画', content: '建议在此页插入"反向传播计算图"动画，用|红色箭头标注梯度流向|，|蓝色节点展示每层输出|，帮助 38% 学生建立直觉。' },
+      { tag: '分支降级', tagClass: 'tag-branch', title: '补充数学前置分支', content: '针对 12 名数学基础薄弱的学生，插入一条"偏导数与链式法则速查"分支，在学生卡壳时自动切入。' },
+    ],
   },
-  {
-    id: 'm-2',
-    title: '目标证书',
-    detail: 'AI 导论阶段认证 · 还差 18 学习积分',
-    accent: '#0891b2',
+  'course-2': {
+    name: '机器学习基础',
+    unit: '模型评估与交叉验证',
+    audience: '大二(1)班',
+    studentCount: 52,
+    totalPages: 15,
+    topicKeywords: ['过拟合', '交叉验证', 'bias-variance'],
+    queries: [
+      '"K-fold 的 K 越大越好吗？"',
+      '"为什么训练集准确率高但测试集很低？"',
+      '"正则化参数 λ 怎么选？"',
+    ],
+    clusters: [
+      { label: '错因 1：过拟合判断失误', desc: '无法区分过拟合与欠拟合的表现差异', pct: 42, count: 22 },
+      { label: '错因 2：验证策略混淆', desc: '将验证集与测试集的用途搞反', pct: 35, count: 18 },
+      { label: '错因 3：正则化原理不明', desc: '不理解 L1/L2 正则化如何约束模型复杂度', pct: 23, count: 12 },
+    ],
+    advices: [
+      { tag: '交互实验', tagClass: 'tag-visual', title: '增加学习曲线交互面板', content: '建议插入"训练/验证误差曲线"交互组件，学生可|拖动滑块调节模型复杂度|，实时观察|过拟合与欠拟合的变化趋势|。' },
+      { tag: '动态路由', tagClass: 'tag-branch', title: '补充正则化推导路径', content: '针对 12 名正则化理解困难的学生，自动切入"L1/L2 正则化几何直觉"的降级讲解分支。' },
+    ],
   },
-  {
-    id: 'm-3',
-    title: '复习提醒',
-    detail: '建议本周回看 2 次“梯度下降”讲解',
-    accent: '#059669',
+  'course-3': {
+    name: '数据结构与算法',
+    unit: '动态规划入门与状态转移',
+    audience: '大一(5)班',
+    studentCount: 48,
+    totalPages: 20,
+    topicKeywords: ['状态转移方程', '最优子结构', '记忆化搜索'],
+    queries: [
+      '"状态转移方程怎么列？感觉每道题都不一样"',
+      '"记忆化搜索和动态规划到底有什么区别？"',
+      '"为什么要从子问题开始推？正着想不行吗？"',
+    ],
+    clusters: [
+      { label: '错因 1：状态定义困难', desc: '无法将问题抽象为子问题并定义状态变量', pct: 45, count: 22 },
+      { label: '错因 2：递推方向混淆', desc: '分不清自顶向下与自底向上的适用场景', pct: 32, count: 15 },
+      { label: '错因 3：边界条件遗漏', desc: '转移方程正确但基础情况处理错误', pct: 23, count: 11 },
+    ],
+    advices: [
+      { tag: '可视化增强', tagClass: 'tag-visual', title: '增加状态转移动画', content: '建议在此页插入"DP 表格逐步填充"动画，用|红色高亮当前状态|，|蓝色标记依赖的子状态|，帮助 45% 学生理解递推过程。' },
+      { tag: '分支降级', tagClass: 'tag-branch', title: '补充递归到 DP 的过渡讲解', content: '针对 15 名方向混淆的学生，插入一条"从暴力递归 → 记忆化 → 递推"的渐进式讲解分支。' },
+    ],
   },
-]
+  'course-4': {
+    name: 'Python 程序设计',
+    unit: '面向对象编程与类继承',
+    audience: '大一(3)班',
+    studentCount: 55,
+    totalPages: 16,
+    topicKeywords: ['类', '继承', '多态'],
+    queries: [
+      '"self 参数到底是什么？为什么每个方法都要写？"',
+      '"子类调用父类方法用 super() 还是直接写类名？"',
+      '"什么时候该用继承，什么时候该用组合？"',
+    ],
+    clusters: [
+      { label: '错因 1：self 理解偏差', desc: '不理解实例方法中 self 的绑定机制', pct: 40, count: 22 },
+      { label: '错因 2：继承链混乱', desc: '多继承场景下 MRO 解析顺序不清', pct: 35, count: 19 },
+      { label: '错因 3：封装意识缺失', desc: '直接访问私有属性而非通过方法接口', pct: 25, count: 14 },
+    ],
+    advices: [
+      { tag: '交互实验', tagClass: 'tag-visual', title: '增加对象内存模型图', content: '建议在此页插入"对象内存布局"可视化，用|红色标注实例属性|，|蓝色标注类属性|，让学生直观看到 self 的指向关系。' },
+      { tag: '动态路由', tagClass: 'tag-branch', title: '补充继承实战分支', content: '针对 19 名继承链混乱的学生，插入一条"从单继承到多继承的逐步构建"分支进行补漏。' },
+    ],
+  },
+}
 
-export const weeklyLearningPlan = [
-  {
-    id: 'w-1',
-    day: '周一',
-    title: '线性代数回顾',
-    minutes: 45,
-    tag: '基础巩固',
-    done: true,
-  },
-  {
-    id: 'w-2',
-    day: '周二',
-    title: '梯度下降专题课',
-    minutes: 60,
-    tag: '重点突破',
-    done: true,
-  },
-  {
-    id: 'w-3',
-    day: '周三',
-    title: '知识点自测',
-    minutes: 25,
-    tag: '测验',
-    done: false,
-  },
-  {
-    id: 'w-4',
-    day: '周四',
-    title: '课堂讨论与问答',
-    minutes: 40,
-    tag: '互动',
-    done: false,
-  },
-  {
-    id: 'w-5',
-    day: '周五',
-    title: '案例代码跟练',
-    minutes: 70,
-    tag: '实战',
-    done: false,
-  },
-]
+const CLUSTER_COLORS = ['#ef4444', '#f59e0b', '#3b82f6']
 
-export const skillProgress = [
-  { id: 's-1', label: '数学基础', value: 82, color: '#2563eb' },
-  { id: 's-2', label: '建模思维', value: 71, color: '#0891b2' },
-  { id: 's-3', label: '代码实现', value: 64, color: '#0f766e' },
-  { id: 's-4', label: '结果表达', value: 58, color: '#d97706' },
-]
+export const generateDashboardData = (courseId) => {
+  const profile = COURSE_PROFILES[courseId]
+  const rand = seededRandom(hashCode(courseId || 'default'))
 
-export const leaderboardTopThree = [
-  {
-    id: 'u-1',
-    name: '陈思远',
-    score: 1560,
-    rank: 2,
-    streak: 15,
-    courses: 7,
-    badge: '稳定推进',
-  },
-  {
-    id: 'u-2',
-    name: '林知夏',
-    score: 1688,
-    rank: 1,
-    streak: 21,
-    courses: 8,
-    badge: '本周领先',
-  },
-  {
-    id: 'u-3',
-    name: '周靖',
-    score: 1482,
-    rank: 3,
-    streak: 13,
-    courses: 6,
-    badge: '持续跟进',
-  },
-]
+  const name = profile?.name || '未知课程'
+  const unit = profile?.unit || '综合学习单元'
+  const audience = profile?.audience || '默认班级'
+  const studentCount = profile?.studentCount || 40
+  const totalPages = profile?.totalPages || 12
 
-export const leaderboardEntries = [
-  { id: 'u-4', rank: 4, name: '赵闻笙', score: 1396, growth: '+11%', focus: '机器学习基础', minutes: 640 },
-  { id: 'u-5', rank: 5, name: '许安', score: 1318, growth: '+9%', focus: 'Python 程序设计', minutes: 598 },
-  { id: 'u-6', rank: 6, name: '沈清禾', score: 1262, growth: '+14%', focus: '数据结构与算法', minutes: 576 },
-  { id: 'u-7', rank: 7, name: '你', score: 1216, growth: '+18%', focus: '人工智能导论', minutes: 552, isCurrentUser: true },
-  { id: 'u-8', rank: 8, name: '蒋舟', score: 1184, growth: '+7%', focus: '人工智能导论', minutes: 531 },
-  { id: 'u-9', rank: 9, name: '吴昀', score: 1138, growth: '+5%', focus: '机器学习基础', minutes: 516 },
-  { id: 'u-10', rank: 10, name: '冯恬', score: 1096, growth: '+4%', focus: 'Python 程序设计', minutes: 493 },
-]
+  const barData = []
+  let totalInteractions = 0
+  let maxVal = 0
+  let maxPage = 0
 
-export const leaderboardInsights = [
-  {
-    id: 'i-1',
-    title: '进入前五还差',
-    value: '102 分',
-    detail: '完成 2 次专题练习和 1 次课堂测验，基本可以追平。',
-  },
-  {
-    id: 'i-2',
-    title: '本周成长率',
-    value: '+18%',
-    detail: '当前增速在前十里排第 2，保持节奏还有上升空间。',
-  },
-  {
-    id: 'i-3',
-    title: '建议优先课程',
-    value: '人工智能导论',
-    detail: '这门课的问答得分还有提升空间，适合用来快速补分。',
-  },
-]
+  for (let i = 1; i <= totalPages; i++) {
+    const base = Math.floor(rand() * 20) + 3
+    const val = Math.min(base, 50)
+    totalInteractions += val
+    if (val > maxVal) {
+      maxVal = val
+      maxPage = i
+    }
+    barData.push({ page: `页${i}`, val, pct: 0, danger: false })
+  }
+
+  barData.forEach((b) => {
+    b.pct = Math.round((b.val / maxVal) * 100)
+  })
+  const dangerIdx = barData.findIndex((b) => b.val === maxVal)
+  if (dangerIdx >= 0) {
+    barData[dangerIdx].danger = true
+  }
+
+  const clusters = (profile?.clusters || [
+    { label: '错因 1：核心概念混淆', desc: '基础定义理解有偏差', pct: 44, count: Math.round(studentCount * 0.44) },
+    { label: '错因 2：模型应用失败', desc: '无法将理论映射到实际场景', pct: 33, count: Math.round(studentCount * 0.33) },
+    { label: '错因 3：基础运算薄弱', desc: '计算与推导过程出错', pct: 23, count: Math.round(studentCount * 0.23) },
+  ]).map((c, i) => ({ ...c, color: CLUSTER_COLORS[i] || '#6b7280' }))
+
+  const nlpConfidence = (85 + rand() * 12).toFixed(1)
+
+  return {
+    courseName: name,
+    courseUnit: unit,
+    audience,
+    studentCount,
+    totalPages,
+    totalInteractions,
+    dangerNode: `Node_${maxPage}`,
+    dangerPage: maxPage,
+    nlpConfidence: `${nlpConfidence}%`,
+    adviceCount: profile?.advices?.length || 2,
+    barData,
+    rawQueries: profile?.queries || [
+      '"这个概念和之前学的有什么区别？"',
+      '"公式推导过程能再讲一遍吗？"',
+      '"实际应用中是怎么使用的？"',
+    ],
+    clusters,
+    advices: profile?.advices || [
+      { tag: '可视化增强', tagClass: 'tag-visual', title: '增加概念对比图', content: '建议插入对比图，用|红色标注易混淆概念|，|蓝色标注正确理解|，帮助学生区分。' },
+      { tag: '分支降级', tagClass: 'tag-branch', title: '补充基础前置分支', content: '针对基础薄弱的学生，插入前置知识讲解分支，在卡壳时自动切入。' },
+    ],
+  }
+}

@@ -96,6 +96,9 @@ const goHome = () => router.push('/home')
 const goLearningPath = () => router.push('/learning-path')
 const goLeaderboard = () => router.push('/leaderboard')
 const goTeacherUpload = () => router.push('/teacher/upload')
+const goDataFeedback = (course) => {
+  router.push({ path: '/teacher/data-feedback', query: { courseId: course.id } })
+}
 const handleLogout = async () => {
   try {
     await ElMessageBox.confirm('确认退出吗？', '提示', {
@@ -246,10 +249,22 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
             <span class="progress-pct">{{ course.progress }}%</span>
           </div>
 
-          <button class="enter-btn">
-            <span>进入学习</span>
-            <span class="enter-arrow">→</span>
-          </button>
+          <div class="card-actions">
+            <button class="enter-btn" :style="{ flex: canEnterTeacherPage ? 1 : 'auto', width: canEnterTeacherPage ? 'auto' : '100%' }">
+              <span>进入学习</span>
+              <span class="enter-arrow">→</span>
+            </button>
+            <button
+              v-if="canEnterTeacherPage"
+              class="feedback-btn"
+              @click.stop="goDataFeedback(course)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              学情数据
+            </button>
+          </div>
         </div>
       </div>
 
@@ -766,6 +781,11 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
   text-align: right;
 }
 
+.card-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .enter-btn {
   all: unset;
   cursor: pointer;
@@ -785,6 +805,27 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
 
 .enter-btn:hover {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.feedback-btn {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.feedback-btn:hover {
+  background: rgba(99, 102, 241, 0.16);
 }
 
 .enter-arrow {
