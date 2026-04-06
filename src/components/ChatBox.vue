@@ -28,6 +28,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  customSubmit: {
+    type: Function,
+    default: null,
+  },
 })
 
 const emit = defineEmits(['after-answer'])
@@ -159,6 +163,35 @@ const appendSystemMessage = (text) => {
   })
 }
 
+const appendExternalMessage = (payload = {}) => {
+  const message = {
+    id: payload.id || `msg-${Date.now()}-${payload.role || 'ai'}`,
+    role: payload.role || 'ai',
+    text: payload.text || '',
+    relatedKnowledge: Array.isArray(payload.relatedKnowledge) ? payload.relatedKnowledge : [],
+    understandingLevel: payload.understandingLevel || '',
+    suggestions: Array.isArray(payload.suggestions) ? payload.suggestions : [],
+    nextAction: payload.nextAction || '',
+    reason: payload.reason || '',
+    createdAt: payload.createdAt || new Date().toISOString(),
+  }
+  localMessages.value.push(message)
+  return message.id
+}
+
+const updateExternalMessage = (messageId, patch = {}) => {
+  const index = localMessages.value.findIndex((item) => item.id === messageId)
+  if (index < 0) {
+    return false
+  }
+
+  localMessages.value[index] = {
+    ...localMessages.value[index],
+    ...patch,
+  }
+  return true
+}
+
 const resetVoiceDraft = ({ restoreText = false } = {}) => {
   speechTranscript.value = ''
   if (restoreText) {
@@ -184,6 +217,15 @@ const sendMessage = async ({ questionOverride = '', questionType = 'text' } = {}
   sending.value = true
 
   try {
+    const customResult = await props.customSubmit?.({
+      question,
+      questionType,
+    })
+
+    if (customResult?.handled) {
+      return
+    }
+
     const result = await interactQA({
       userId: props.userId,
       lessonId: props.lessonId,
@@ -480,6 +522,11 @@ const cancelVoicePress = (event) => {
 
 onBeforeUnmount(() => {
   hardStopSpeechRecognition({ restoreText: false })
+})
+
+defineExpose({
+  appendExternalMessage,
+  updateExternalMessage,
 })
 </script>
 

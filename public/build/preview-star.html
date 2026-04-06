@@ -1,0 +1,160 @@
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Star 预览</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            background-color: #0f172a;
+            display: flex;
+            justify-content: center;
+            align-items: stretch;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            color: #e5e7eb;
+            box-sizing: border-box;
+            gap: 20px;
+        }
+
+        .game-window {
+            flex: 1;
+            min-height: calc(100vh - 48px);
+            background-color: #111827;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .window-content {
+            flex: 1;
+            position: relative;
+        }
+
+        .guide-panel {
+            width: 360px;
+            padding: 24px;
+            border-radius: 12px;
+            background: #111827;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+            overflow-y: auto;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 28px;
+        }
+
+        h2 {
+            margin: 22px 0 10px;
+            font-size: 18px;
+            color: #93c5fd;
+        }
+
+        p {
+            margin: 0 0 12px;
+            line-height: 1.6;
+            color: #cbd5e1;
+        }
+
+        ul {
+            margin: 0;
+            padding-left: 20px;
+            line-height: 1.8;
+            color: #e5e7eb;
+        }
+
+        li + li {
+            margin-top: 4px;
+        }
+
+        .tip {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(30, 41, 59, 0.95);
+            color: #fcd34d;
+            line-height: 1.6;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+
+        @media (max-width: 1200px) {
+            body {
+                flex-direction: column;
+            }
+
+            .guide-panel {
+                width: auto;
+            }
+
+            .game-window {
+                min-height: 60vh;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <aside class="guide-panel">
+        <h1>星球系统玩法说明</h1>
+        <p>这是第三关的星球模拟场景。你可以先在编辑状态调整天体参数，再开始模拟，观察行星围绕恒星或多体系统的运动效果。</p>
+
+        <h2>核心流程</h2>
+        <ul>
+            <li>先通过右侧属性面板调整行星质量、初速度、位置、轨道显示和力箭头参数。</li>
+            <li>点“开始模拟”后，系统会按当前配置启动运动。</li>
+            <li>点“暂停模拟”可以暂停或继续当前模拟。</li>
+            <li>点“重置”会回到本次开始模拟前的初始状态。</li>
+        </ul>
+
+        <h2>界面按钮</h2>
+        <ul>
+            <li>开始模拟：进入运行状态并计算当前系统的初始运动。</li>
+            <li>暂停模拟：在暂停和继续之间切换。</li>
+            <li>重置：恢复到开始模拟前的行星位置，并关闭三星模式。</li>
+            <li>三星系统：只有“恰好 3 个行星且没有恒星”时才能开启，用于自动保持三星平衡布局。</li>
+            <li>添加行星：向场景中新增一个行星。</li>
+            <li>添加恒星：向场景中新增一个恒星；场景里已有恒星时不能重复添加。</li>
+        </ul>
+
+        <h2>鼠标与键盘</h2>
+        <ul>
+            <li>鼠标左键：点击星球，选中当前天体。</li>
+            <li>鼠标右键拖动：旋转相机视角。</li>
+            <li>鼠标滚轮：缩放镜头，聚焦目标时会沿目标方向拉近或拉远。</li>
+            <li>W / A / S / D：前后左右移动相机。</li>
+            <li>Q / E：垂直下移 / 上移相机。</li>
+            <li>Shift：加速移动相机。</li>
+            <li>F：对当前已选中的星球开启或取消聚焦。</li>
+            <li>Esc：取消当前聚焦。</li>
+        </ul>
+
+        <h2>属性面板</h2>
+        <ul>
+            <li>行星可修改：质量、初始速度、位置、是否显示轨道、是否显示受力、力箭头缩放、箭头头部比例。</li>
+            <li>恒星可修改：质量和位置。</li>
+            <li>编辑状态下可以增删天体；模拟中不允许删除，避免打断当前计算。</li>
+        </ul>
+
+        <div class="tip">提示：如果开启了三星系统，之后再添加或删除行星 / 恒星，三星开关会自动重置为关闭。</div>
+    </aside>
+
+    <div class="game-window">
+        <div class="window-content">
+            <iframe id="gameIframe" src="./web-mobile-001/index.html?level=3" scrolling="no"></iframe>
+        </div>
+    </div>
+
+</body>
+
+</html>

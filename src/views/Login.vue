@@ -87,7 +87,7 @@ const handleLogin = async () => {
   loading.value = true
   try {
     const isValid = form.account === MOCK_ACCOUNT.account && form.password === MOCK_ACCOUNT.password
-    if (!isValid) { ElMessage.error('账号或密码错误，请使用测试账号'); return }
+    if (!isValid) { ElMessage.error('账号或密码错误'); return }
     const token = `mock-token-${Date.now()}`
     userStore.login({ userId: form.account, role: form.role }, token)
     ElMessage.success('登录成功')
@@ -153,11 +153,6 @@ const handleLogin = async () => {
           <div class="card-header">
             <h2>欢迎回来</h2>
             <p>请登录以继续使用知微智课</p>
-          </div>
-
-          <div class="hint-bar">
-            <span class="hint-dot" />
-            <span>测试账号 <strong>test</strong> · 密码 <strong>123456</strong></span>
           </div>
 
           <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @keyup.enter="handleLogin">
@@ -443,47 +438,6 @@ const handleLogin = async () => {
 .card-header p {
   font-size: 13px;
   color: #4e6080;
-}
-
-/* ── Hint bar ────────────────────────────────────────────── */
-.hint-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(37, 99, 235, 0.1);
-  border: 1px solid rgba(37, 99, 235, 0.2);
-  font-size: 12.5px;
-  color: #7ba5d8;
-  margin-bottom: 24px;
-}
-
-.hint-bar strong {
-  color: #93c5fd;
-  font-weight: 600;
-}
-
-.hint-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #3b82f6;
-  box-shadow: 0 0 6px #3b82f6;
-  flex-shrink: 0;
-  animation: pulse 2s ease-in-out infinite;
-}
-
-@keyframes pulse {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0.3;
-  }
 }
 
 /* ── Role toggle ─────────────────────────────────────────── */

@@ -72,6 +72,35 @@ onMounted(() => {
 const canEnterTeacherPage = computed(() => userStore.isTeacher)
 const currentUserName = computed(() => userStore.userInfo.userId || '未知用户')
 const currentRole = computed(() => (userStore.isTeacher ? '教师' : '学生'))
+const heroContent = computed(() => {
+  if (canEnterTeacherPage.value) {
+    const runningCourseCount = courseList.value.length
+    return {
+      eyebrow: '✦ TEACHING OVERVIEW',
+      titlePrefix: '管理你的课程与',
+      titleEmphasis: '教学进度',
+      subtitle: `当前有 ${runningCourseCount} 门课程正在运行 · 共服务 66 名学生`,
+      stats: [
+        { value: String(runningCourseCount), label: '在授课程' },
+        { value: '50', label: '在学学生人数' },
+        { value: '12', label: '本周互动次数' },
+      ],
+    }
+  }
+
+  return {
+    eyebrow: '✦ AI POWERED LEARNING',
+    titlePrefix: '继续你的',
+    titleEmphasis: '学习旅程',
+    subtitle: '4 门课程正在进行 · 距下一个里程碑还差 2 步',
+    stats: [
+      { value: '3', label: '学习天数' },
+      { value: '54%', label: '平均进度' },
+      { value: '12', label: '累计分钟' },
+    ],
+  }
+})
+const primaryActionText = computed(() => (canEnterTeacherPage.value ? '进入课程' : '进入学习'))
 const userInitial = computed(() => {
   const name = currentUserName.value
   return name ? String(name).slice(0, 1).toUpperCase() : 'U'
@@ -93,7 +122,6 @@ const enterLesson = (course) => {
 }
 
 const goHome = () => router.push('/home')
-const goLearningPath = () => router.push('/learning-path')
 const goLeaderboard = () => router.push('/leaderboard')
 const goTeacherUpload = () => router.push('/teacher/upload')
 const goDataFeedback = (course) => {
@@ -174,7 +202,6 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
         <div class="nav-logo" @click="goHome">✦ 知微智课</div>
         <nav class="nav-links">
           <a class="nav-link active">已有课程</a>
-          <a class="nav-link" @click="goLearningPath">学习路径</a>
           <a class="nav-link" @click="goLeaderboard">排行榜</a>
         </nav>
       </div>
@@ -193,15 +220,14 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
     <!-- ── Hero banner ────────────────────────── -->
     <section class="hero">
       <div class="hero-content">
-        <p class="hero-eyebrow">✦ AI POWERED LEARNING</p>
-        <h1 class="hero-title">继续你的<br><em>学习旅程</em></h1>
-        <p class="hero-sub">4 门课程正在进行 · 距下一个里程碑还差 2 步</p>
+        <p class="hero-eyebrow">{{ heroContent.eyebrow }}</p>
+        <h1 class="hero-title">{{ heroContent.titlePrefix }}<br><em>{{ heroContent.titleEmphasis }}</em></h1>
+        <p class="hero-sub">{{ heroContent.subtitle }}</p>
         <div class="hero-stats">
-          <div class="stat"><span class="stat-num">3</span><span class="stat-label">学习天数</span></div>
-          <div class="stat-div" />
-          <div class="stat"><span class="stat-num">54%</span><span class="stat-label">平均进度</span></div>
-          <div class="stat-div" />
-          <div class="stat"><span class="stat-num">12</span><span class="stat-label">累计分钟</span></div>
+          <template v-for="(stat, index) in heroContent.stats" :key="stat.label">
+            <div class="stat"><span class="stat-num">{{ stat.value }}</span><span class="stat-label">{{ stat.label }}</span></div>
+            <div v-if="index < heroContent.stats.length - 1" class="stat-div" />
+          </template>
         </div>
       </div>
       <div class="hero-visual">
@@ -242,7 +268,7 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
           </div>
 
           <!-- Progress -->
-          <div class="progress-row">
+          <div v-if="!canEnterTeacherPage" class="progress-row">
             <div class="progress-track">
               <div class="progress-fill" :style="{ width: course.progress + '%' }" />
             </div>
@@ -251,7 +277,7 @@ const askQuick = (q) => { chatInput.value = q; sendMessage() }
 
           <div class="card-actions">
             <button class="enter-btn" :style="{ flex: canEnterTeacherPage ? 1 : 'auto', width: canEnterTeacherPage ? 'auto' : '100%' }">
-              <span>进入学习</span>
+              <span>{{ primaryActionText }}</span>
               <span class="enter-arrow">→</span>
             </button>
             <button

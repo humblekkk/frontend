@@ -1,7 +1,7 @@
 export const GENERATED_SMART_COURSE = Object.freeze({
   id: 'course-star-orbit-001',
   lessonId: 'lesson-star-orbit-001',
-  name: '星轨探微',
+  name: '线性代数',
   desc: '介绍天体物理中双星问题，是天体物理的入门问题',
   tag: '物理·天体运动',
   progress: 0,
@@ -14,7 +14,7 @@ export const GENERATED_SMART_COURSE = Object.freeze({
 export const GENERATED_SMART_LESSON = Object.freeze({
   lessonId: 'lesson-star-orbit-001',
   courseId: 'course-star-orbit-001',
-  lessonTitle: '星轨探微',
+  lessonTitle: '线性代数',
   fileName: '双星问题.pptx',
   totalPages: 13,
   previewBasePath: '/双星问题',

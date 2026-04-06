@@ -7,6 +7,7 @@ import { getLessonPreviewImageUrl, getLessonPreviewMeta } from '@/api/lesson'
 import { trackProgress } from '@/api/progress'
 import ChatBox from '@/components/ChatBox.vue'
 import { useLessonStore } from '@/store/lessonStore'
+import { GENERATED_SMART_COURSE, GENERATED_SMART_LESSON } from '@/mock/demoCourses'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,10 +33,29 @@ const previewImageFailed = ref(false)
 const previewImageVersion = ref(0)
 const previewTaskStatus = ref('idle')
 const lastQaRecordId = ref('')
+const teacherIframeRef = ref(null)
+const chatBoxRef = ref(null)
+const virtualTeacherVisible = ref(false)
+const pageNarrationMap = ref({})
+const pageDurationMap = ref({})
 let voiceTimer = null
 let hideControlsTimer = null
 let previewPollTimer = null
 let progressTrackTimer = null
+let teacherReadyTimer = null
+let teacherTalkLoopTimer = null
+let speechProgressTimer = null
+let pendingNarrationTimer = null
+let activeUtterance = null
+let activeSpeechPage = 0
+let activeSpeechDurationMs = 0
+let speechStartedAt = 0
+let speechElapsedBeforePauseMs = 0
+let activeAudio = null
+let activePlaybackMode = 'none'
+let awaitingPageSevenFlow = false
+let awaitingPageSevenAnswer = false
+let suppressPageReplay = false
 
 const BLOCKED_NOTE_SUGGESTIONS = new Set(['这个答案是演示数据吗？'])
 const sanitizeQuickReviewPoints = (points = []) => points.filter((point) => {
@@ -44,6 +64,164 @@ const sanitizeQuickReviewPoints = (points = []) => points.filter((point) => {
 })
 
 const normalizeQuery = (v, d = '') => (Array.isArray(v) ? v[0] || d : (typeof v === 'string' ? v : d))
+const clampPercent = (value) => Math.max(0, Math.min(100, value))
+const sanitizeNarrationText = (value = '') => String(value)
+  .replace(/\r/g, '')
+  .replace(/\*\*/g, '')
+  .replace(/`/g, '')
+  .replace(/###/g, '')
+  .replace(/【AI讲稿】[:：]?/g, '')
+  .replace(/【回答】[\s\S]*$/g, '')
+  .replace(/[“”]/g, '')
+  .replace(/\(\s*停顿\d+秒.*?\)/g, '')
+  .replace(/\*\(.*?\)\*/g, '')
+  .replace(/，/g, '， ')
+  .replace(/。/g, '。 ')
+  .replace(/；/g, '； ')
+  .replace(/：/g, '： ')
+  .replace(/！/g, '！ ')
+  .replace(/？/g, '？ ')
+  .replace(/\n{3,}/g, '\n\n')
+  .trim()
+
+const parseNarrationFile = (raw = '') => {
+  const normalized = String(raw || '').replace(/\r/g, '')
+  const headingRegex = /###\s*\*\*第(\d+)页：([^（\n]+)（建议时长：(\d+)秒）\*\*/g
+  const matches = [...normalized.matchAll(headingRegex)]
+
+  if (!matches.length) {
+    return {}
+  }
+
+  return matches.reduce((accumulator, match, index) => {
+    const page = Number(match[1])
+    const title = String(match[2] || '').trim()
+    const durationSec = Number(match[3] || 20)
+    const start = match.index + match[0].length
+    const end = index + 1 < matches.length ? matches[index + 1].index : normalized.length
+    const rawSegment = normalized.slice(start, end)
+    const markerIndex = rawSegment.indexOf('【AI讲稿】')
+    const textSource = markerIndex >= 0 ? rawSegment.slice(markerIndex) : rawSegment
+    const text = sanitizeNarrationText(textSource)
+
+    accumulator[page] = {
+      page,
+      title,
+      durationSec: Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 20,
+      text,
+    }
+
+    return accumulator
+  }, {})
+}
+
+const loadNarrationScript = async () => {
+  try {
+    const response = await fetch('/讲稿.txt')
+    const raw = await response.text()
+    pageNarrationMap.value = parseNarrationFile(raw)
+  } catch {
+    pageNarrationMap.value = {}
+  }
+}
+
+const loadAudioDurations = async () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const entries = await Promise.all(
+    Array.from({ length: FINAL_AUDIO_PAGE }, (_, index) => index + 1).map((page) => new Promise((resolve) => {
+      const audio = new Audio(`/audio/${page}.mp3`)
+      audio.preload = 'metadata'
+      audio.onloadedmetadata = () => resolve([page, Number(audio.duration || 0)])
+      audio.onerror = () => resolve([page, 0])
+    })),
+  )
+
+  pageDurationMap.value = Object.fromEntries(entries)
+}
+
+const currentNarration = computed(() => {
+  const pageEntry = pageNarrationMap.value[safeCurrentPage.value]
+  if (pageEntry?.text) {
+    return pageEntry
+  }
+
+  return {
+    page: safeCurrentPage.value,
+    title: currentSection.value?.title || `第 ${safeCurrentPage.value} 页`,
+    durationSec: 20,
+    text: currentSection.value?.explainScript || '',
+  }
+})
+const currentAudioSrc = computed(() => `/audio/${safeCurrentPage.value}.mp3`)
+const FINAL_AUDIO_PAGE = 13
+const PAGE_SEVEN_PROMPT = '那么你能自己的话向我讲一下你的理解吗，为什么质量大的星反而离中心更近呢？'
+const PAGE_SEVEN_ANSWER = '我觉得是因为两个星体的向心力相等，质量大的星体，需要的向心力也更大，但是它们的向心力又是相等的，因此只能减小自己的半径来维持圆周运动。'
+const PAGE_SEVEN_FEEDBACK = '回答的很准确，看来你掌握的不错！'
+const normalizeInterludeAnswer = (value = '') => String(value).replace(/\s+/g, '').trim()
+
+const getPageDurationSec = (page) => {
+  const audioDurationSec = Number(pageDurationMap.value[page] || 0)
+  if (audioDurationSec > 0) {
+    return audioDurationSec
+  }
+  return Number(pageNarrationMap.value[page]?.durationSec || 20)
+}
+
+const getTotalNarrationDurationSec = () => {
+  let total = 0
+  for (let page = 1; page <= FINAL_AUDIO_PAGE; page += 1) {
+    total += getPageDurationSec(page)
+  }
+  return Math.max(total, 1)
+}
+
+const getElapsedNarrationDurationSec = (page, elapsedSec = 0) => {
+  let total = 0
+  for (let currentPage = 1; currentPage < page; currentPage += 1) {
+    total += getPageDurationSec(currentPage)
+  }
+  return total + Math.max(0, elapsedSec)
+}
+
+const pickSpeechVoice = () => {
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    return null
+  }
+
+  const voices = window.speechSynthesis.getVoices()
+  return voices.find((voice) => /^zh/i.test(voice.lang) && /xiaoxiao|xiaoyi|xiaomei|xiaohan|xiaomeng|xiaoqiu|yunxi|yunyang|yunxia|yunjian|chinese|zh-cn/i.test(`${voice.name} ${voice.lang}`))
+    || voices.find((voice) => /^zh/i.test(voice.lang))
+    || voices[0]
+    || null
+}
+
+const syncPresetLessonContext = () => {
+  const routeLessonId = normalizeQuery(route.query.lessonId, lessonInfo.value.lessonId)
+
+  if (routeLessonId !== GENERATED_SMART_LESSON.lessonId) {
+    return
+  }
+
+  lessonStore.setCourseInfo({
+    courseId: GENERATED_SMART_COURSE.id,
+    courseName: GENERATED_SMART_COURSE.name,
+    courseDesc: GENERATED_SMART_COURSE.desc,
+    teacherName: '张老师',
+  })
+
+  lessonStore.setLessonInfo({
+    lessonId: GENERATED_SMART_LESSON.lessonId,
+    lessonTitle: GENERATED_SMART_LESSON.lessonTitle,
+    fileName: GENERATED_SMART_LESSON.fileName,
+    totalPages: GENERATED_SMART_LESSON.totalPages,
+    sections: GENERATED_SMART_LESSON.sections,
+    pageContents: [],
+  })
+}
+
 const syncContext = () => {
   lessonStore.syncPlatformContext({
     courseId: normalizeQuery(route.query.courseId, courseInfo.value.courseId),
@@ -52,6 +230,7 @@ const syncContext = () => {
     role: normalizeQuery(route.query.role, platformContext.value.role),
     token: normalizeQuery(route.query.token, platformContext.value.token),
   })
+  syncPresetLessonContext()
 }
 
 const statusMap = {
@@ -113,6 +292,10 @@ const previewPlaceholderText = computed(() => {
   }
   return previewError.value || 'PPT 预览加载失败'
 })
+const virtualTeacherSrc = '/build/web-mobile-001/index.html?level=2'
+const TEACHER_IDLE_SPEED = 0.06
+const TEACHER_TALK_SPEED = 0.32
+const TEACHER_TALK_LOOP_MS = 1200
 const catalogItems = computed(() => sectionOptions.value.map((item, index) => ({
   id: item.sectionId,
   title: item.title || `章节 ${index + 1}`,
@@ -154,11 +337,161 @@ const appendQuickPoint = (point) => {
   noteText.value = noteText.value ? `${noteText.value}\n- ${point}` : `- ${point}`
 }
 
+const appendChatMessageFromPlayer = (payload = {}) => chatBoxRef.value?.appendExternalMessage?.(payload) || ''
+const updateChatMessageFromPlayer = (messageId, patch = {}) => chatBoxRef.value?.updateExternalMessage?.(messageId, patch)
+
 const clearPreviewPollTimer = () => {
   if (previewPollTimer) {
     clearTimeout(previewPollTimer)
     previewPollTimer = null
   }
+}
+
+const clearTeacherReadyTimer = () => {
+  if (teacherReadyTimer) {
+    clearInterval(teacherReadyTimer)
+    teacherReadyTimer = null
+  }
+}
+
+const clearTeacherTalkLoopTimer = () => {
+  if (teacherTalkLoopTimer) {
+    clearTimeout(teacherTalkLoopTimer)
+    teacherTalkLoopTimer = null
+  }
+}
+
+const clearSpeechProgressTimer = () => {
+  if (speechProgressTimer) {
+    clearInterval(speechProgressTimer)
+    speechProgressTimer = null
+  }
+}
+
+const clearPendingNarrationTimer = () => {
+  if (pendingNarrationTimer) {
+    clearTimeout(pendingNarrationTimer)
+    pendingNarrationTimer = null
+  }
+}
+
+const clearActiveAudioListeners = () => {
+  if (!activeAudio) {
+    return
+  }
+
+  activeAudio.onloadedmetadata = null
+  activeAudio.ontimeupdate = null
+  activeAudio.onended = null
+  activeAudio.onerror = null
+  activeAudio.onpause = null
+  activeAudio.onplay = null
+}
+
+const getTeacherAPI = () => teacherIframeRef.value?.contentWindow?.teacherAPI
+
+const playTeacherIdle = () => {
+  clearTeacherTalkLoopTimer()
+  try {
+    getTeacherAPI()?.playIdle1?.(TEACHER_IDLE_SPEED)
+  } catch {
+    // ignore avatar action failures in demo mode
+  }
+}
+
+const playTeacherTalk = () => {
+  clearTeacherTalkLoopTimer()
+  const teacherAPI = getTeacherAPI()
+  try {
+    teacherAPI?.playTalkImmediately?.(TEACHER_TALK_SPEED)
+  } catch {
+    // ignore avatar action failures in demo mode
+  }
+
+  const loopTalk = () => {
+    if (explainStatus.value !== 'explaining') {
+      clearTeacherTalkLoopTimer()
+      return
+    }
+
+    try {
+      teacherAPI?.playTalkImmediately?.(TEACHER_TALK_SPEED)
+      teacherTalkLoopTimer = setTimeout(loopTalk, TEACHER_TALK_LOOP_MS)
+    } catch {
+      clearTeacherTalkLoopTimer()
+    }
+  }
+
+  teacherTalkLoopTimer = setTimeout(loopTalk, TEACHER_TALK_LOOP_MS)
+}
+
+const makeTeacherIframeTransparent = () => {
+  const iframe = teacherIframeRef.value
+  if (!iframe?.contentDocument) {
+    return false
+  }
+
+  try {
+    const doc = iframe.contentDocument
+    const html = doc.documentElement
+    const body = doc.body
+    const gameDiv = doc.getElementById('GameDiv')
+    const container = doc.getElementById('Cocos3dGameContainer')
+    const canvas = doc.getElementById('GameCanvas')
+
+    if (html) html.style.background = 'transparent'
+    if (body) {
+      body.style.background = 'transparent'
+      body.style.backgroundColor = 'transparent'
+    }
+    if (gameDiv) {
+      gameDiv.style.background = 'transparent'
+      gameDiv.style.backgroundColor = 'transparent'
+    }
+    if (container) {
+      container.style.background = 'transparent'
+      container.style.backgroundColor = 'transparent'
+    }
+    if (canvas) {
+      canvas.style.background = 'transparent'
+      canvas.style.backgroundColor = 'transparent'
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+const initVirtualTeacher = () => {
+  virtualTeacherVisible.value = false
+  clearTeacherReadyTimer()
+  teacherReadyTimer = setInterval(() => {
+    const iframe = teacherIframeRef.value
+    const teacherAPI = iframe?.contentWindow?.teacherAPI
+    makeTeacherIframeTransparent()
+
+    if (!teacherAPI) {
+      return
+    }
+
+    try {
+      teacherAPI.playIdle1?.(TEACHER_IDLE_SPEED)
+    } catch {
+      // ignore avatar init failures in demo mode
+    }
+
+    virtualTeacherVisible.value = true
+    clearTeacherReadyTimer()
+  }, 500)
+}
+
+const handleTeacherIframeLoad = () => {
+  virtualTeacherVisible.value = false
+  setTimeout(() => {
+    makeTeacherIframeTransparent()
+    initVirtualTeacher()
+  }, 120)
 }
 
 const schedulePreviewRefresh = (delay = 2500) => {
@@ -222,6 +555,350 @@ const handlePreviewImageError = () => {
   previewError.value = previewError.value || 'PPT 预览图片加载失败'
 }
 
+const updateOverallVoiceProgress = (page, elapsedSec = 0) => {
+  const safePage = Math.min(Math.max(1, Number(page || 1)), FINAL_AUDIO_PAGE)
+  const totalDurationSec = getTotalNarrationDurationSec()
+  const elapsedDurationSec = Math.min(
+    getElapsedNarrationDurationSec(safePage, elapsedSec),
+    totalDurationSec,
+  )
+  voiceProgress.value = clampPercent((elapsedDurationSec / totalDurationSec) * 100)
+}
+
+const syncSpeechProgress = () => {
+  if (!activeSpeechDurationMs || !speechStartedAt) {
+    return
+  }
+
+  const elapsedMs = speechElapsedBeforePauseMs + (performance.now() - speechStartedAt)
+  updateOverallVoiceProgress(activeSpeechPage || safeCurrentPage.value, elapsedMs / 1000)
+}
+
+const beginSpeechProgress = () => {
+  clearSpeechProgressTimer()
+  speechStartedAt = performance.now()
+  speechProgressTimer = setInterval(() => {
+    if (explainStatus.value !== 'explaining') {
+      return
+    }
+    syncSpeechProgress()
+  }, 120)
+}
+
+const playNextPageNarration = (nextPage) => {
+  const resolvedNextPage = Number(nextPage || 0)
+  if (!Number.isInteger(resolvedNextPage) || resolvedNextPage < 1 || resolvedNextPage > FINAL_AUDIO_PAGE) {
+    voiceProgress.value = 100
+    playTeacherIdle()
+    lessonStore.setExplainStatus('paused')
+    return
+  }
+
+  suppressPageReplay = true
+  const targetSection = (lessonInfo.value.sections || []).find((section) => section.relatedPages?.includes(resolvedNextPage))
+  if (targetSection?.sectionId) {
+    lessonStore.setCurrentSection(targetSection.sectionId)
+  }
+  lessonStore.setCurrentPage(resolvedNextPage)
+
+  pendingNarrationTimer = setTimeout(() => {
+    pendingNarrationTimer = null
+    playPreGeneratedAudio()
+  }, 200)
+}
+
+const continueAfterPageSevenAnswer = () => {
+  const nextPage = 8
+  awaitingPageSevenFlow = false
+  awaitingPageSevenAnswer = false
+  showResumePrompt.value = false
+  suppressPageReplay = true
+  lessonStore.setExplainStatus('explaining')
+
+  const targetSection = (lessonInfo.value.sections || []).find((section) => section.relatedPages?.includes(nextPage))
+  if (targetSection?.sectionId) {
+    lessonStore.setCurrentSection(targetSection.sectionId)
+  }
+  lessonStore.setCurrentPage(nextPage)
+
+  previewImageFailed.value = false
+  previewImageVersion.value += 1
+  updateOverallVoiceProgress(nextPage, 0)
+
+  pendingNarrationTimer = setTimeout(() => {
+    pendingNarrationTimer = null
+    playPreGeneratedAudio()
+  }, 240)
+}
+
+const runPageSevenInterlude = async () => {
+  if (awaitingPageSevenFlow) {
+    return
+  }
+
+  awaitingPageSevenFlow = true
+  awaitingPageSevenAnswer = true
+  activeRightTab.value = 'chat'
+  lessonStore.setExplainStatus('qa')
+  playTeacherIdle()
+
+  appendChatMessageFromPlayer({
+    role: 'ai',
+    text: PAGE_SEVEN_PROMPT,
+  })
+
+  return
+
+  const loadingMessageId = appendChatMessageFromPlayer({
+    role: 'ai',
+    text: '正在思考...',
+  })
+
+  await new Promise((resolve) => {
+    pendingNarrationTimer = setTimeout(resolve, 3200)
+  })
+  pendingNarrationTimer = null
+
+  updateChatMessageFromPlayer(loadingMessageId, {
+    text: PAGE_SEVEN_FEEDBACK,
+    createdAt: new Date().toISOString(),
+  })
+
+  await new Promise((resolve) => {
+    pendingNarrationTimer = setTimeout(resolve, 2000)
+  })
+  pendingNarrationTimer = null
+
+  awaitingPageSevenFlow = false
+  playNextPageNarration(8)
+}
+
+const handlePageSevenPromptAnswer = async ({ question = '' } = {}) => {
+  if (!awaitingPageSevenAnswer) {
+    return { handled: false }
+  }
+
+  const normalizedQuestion = normalizeInterludeAnswer(question)
+  if (!normalizedQuestion) {
+    return { handled: true }
+  }
+
+  const loadingMessageId = appendChatMessageFromPlayer({
+    role: 'ai',
+    text: '正在思考...',
+  })
+
+  await new Promise((resolve) => {
+    pendingNarrationTimer = setTimeout(resolve, 3200)
+  })
+  pendingNarrationTimer = null
+
+  if (!awaitingPageSevenFlow) {
+    return { handled: true }
+  }
+
+  if (normalizedQuestion !== normalizeInterludeAnswer(PAGE_SEVEN_ANSWER)) {
+    updateChatMessageFromPlayer(loadingMessageId, {
+      text: '可以再结合“向心力大小相等”和“质量越大越靠近中心”这两个点再组织一下。',
+      createdAt: new Date().toISOString(),
+    })
+    return { handled: true }
+  }
+
+  awaitingPageSevenAnswer = false
+  updateChatMessageFromPlayer(loadingMessageId, {
+    text: PAGE_SEVEN_FEEDBACK,
+    createdAt: new Date().toISOString(),
+  })
+
+  await new Promise((resolve) => {
+    pendingNarrationTimer = setTimeout(resolve, 2000)
+  })
+  pendingNarrationTimer = null
+
+  if (!awaitingPageSevenFlow) {
+    return { handled: true }
+  }
+
+  continueAfterPageSevenAnswer()
+  return { handled: true }
+}
+
+const handleChatSubmit = async ({ question = '' } = {}) => {
+  if (awaitingPageSevenAnswer) {
+    return handlePageSevenPromptAnswer({ question })
+  }
+
+  return { handled: false }
+}
+
+const stopSpeech = ({ resetProgress = false, keepStatus = false } = {}) => {
+  clearSpeechProgressTimer()
+  clearPendingNarrationTimer()
+  awaitingPageSevenFlow = false
+  awaitingPageSevenAnswer = false
+  if (activeAudio) {
+    clearActiveAudioListeners()
+    activeAudio.pause()
+    activeAudio.src = ''
+    activeAudio.load?.()
+    activeAudio = null
+  }
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    window.speechSynthesis.cancel()
+  }
+  activePlaybackMode = 'none'
+  activeUtterance = null
+  activeSpeechPage = 0
+  activeSpeechDurationMs = 0
+  speechStartedAt = 0
+  speechElapsedBeforePauseMs = 0
+  if (resetProgress) {
+    updateOverallVoiceProgress(safeCurrentPage.value, 0)
+  }
+  playTeacherIdle()
+  if (!keepStatus && explainStatus.value === 'explaining') {
+    lessonStore.setExplainStatus('paused')
+  }
+}
+
+const finishSpeech = ({ completedPage = safeCurrentPage.value } = {}) => {
+  clearSpeechProgressTimer()
+  clearPendingNarrationTimer()
+  activeUtterance = null
+  activeAudio = null
+  activePlaybackMode = 'none'
+  speechStartedAt = 0
+  speechElapsedBeforePauseMs = activeSpeechDurationMs
+  updateOverallVoiceProgress(completedPage, getPageDurationSec(completedPage))
+  playTeacherIdle()
+
+  if (completedPage === 7) {
+    runPageSevenInterlude()
+    return
+  }
+
+  if (completedPage < FINAL_AUDIO_PAGE) {
+    playNextPageNarration(completedPage + 1)
+    return
+  }
+
+  voiceProgress.value = 100
+  lessonStore.setExplainStatus('paused')
+}
+
+const speakCurrentPage = () => {
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    ElMessage.warning('当前浏览器不支持原生语音播放')
+    return
+  }
+
+  const narration = currentNarration.value
+  const text = sanitizeNarrationText(narration.text)
+  if (!text) {
+    ElMessage.warning('当前页暂无可播放讲稿')
+    return
+  }
+
+  stopSpeech({ resetProgress: true, keepStatus: true })
+  activeSpeechPage = safeCurrentPage.value
+  activeSpeechDurationMs = Math.max(3000, Number(narration.durationSec || 20) * 1000)
+  speechElapsedBeforePauseMs = 0
+  updateOverallVoiceProgress(activeSpeechPage, 0)
+
+  const utterance = new SpeechSynthesisUtterance(text)
+  const selectedVoice = pickSpeechVoice()
+  if (selectedVoice) {
+    utterance.voice = selectedVoice
+    utterance.lang = selectedVoice.lang || 'zh-CN'
+  } else {
+    utterance.lang = 'zh-CN'
+  }
+  utterance.rate = 0.92
+  utterance.pitch = 1.08
+  utterance.volume = 1
+
+  utterance.onstart = () => {
+    lessonStore.setExplainStatus('explaining')
+    playTeacherTalk()
+    beginSpeechProgress()
+  }
+
+  utterance.onend = () => {
+    finishSpeech({ completedPage: activeSpeechPage })
+  }
+
+  utterance.onerror = () => {
+    stopSpeech({ keepStatus: false })
+  }
+
+  activeUtterance = utterance
+  activePlaybackMode = 'speech'
+  window.speechSynthesis.cancel()
+  window.speechSynthesis.speak(utterance)
+}
+
+const playPreGeneratedAudio = () => {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  stopSpeech({ resetProgress: true, keepStatus: true })
+  activeSpeechPage = safeCurrentPage.value
+  activeSpeechDurationMs = Math.max(1000, getPageDurationSec(activeSpeechPage) * 1000)
+  updateOverallVoiceProgress(activeSpeechPage, 0)
+
+  const audio = new Audio(currentAudioSrc.value)
+  audio.preload = 'auto'
+  activeAudio = audio
+  activePlaybackMode = 'audio'
+
+  audio.onloadedmetadata = () => {
+    activeSpeechDurationMs = Math.max(1000, (audio.duration || 0) * 1000)
+    pageDurationMap.value = {
+      ...pageDurationMap.value,
+      [activeSpeechPage]: Number(audio.duration || 0),
+    }
+  }
+
+  audio.onplay = () => {
+    lessonStore.setExplainStatus('explaining')
+    playTeacherTalk()
+  }
+
+  audio.ontimeupdate = () => {
+    const duration = audio.duration || (activeSpeechDurationMs / 1000) || 0
+    if (duration > 0) {
+      updateOverallVoiceProgress(activeSpeechPage, audio.currentTime)
+    }
+  }
+
+  audio.onpause = () => {
+    if (audio.ended) {
+      return
+    }
+    playTeacherIdle()
+  }
+
+  audio.onended = () => {
+    finishSpeech({ completedPage: activeSpeechPage })
+  }
+
+  audio.onerror = () => {
+    if (activePlaybackMode === 'audio') {
+      activeAudio = null
+      speakCurrentPage()
+    }
+  }
+
+  audio.play().catch(() => {
+    if (activePlaybackMode === 'audio') {
+      activeAudio = null
+      speakCurrentPage()
+    }
+  })
+}
+
 const reportLearningProgress = async ({ qaRecordId = '' } = {}) => {
   if (!platformContext.value.userId || !currentLessonId.value || !lessonInfo.value.currentSectionId) {
     return
@@ -253,26 +930,57 @@ const scheduleLearningProgressReport = (options = {}) => {
 }
 
 const clearVoiceTimer = () => { if (voiceTimer) { clearInterval(voiceTimer); voiceTimer = null } }
-const syncPageByProgress = () => {
-  const pages = playbackPages.value
-  if (!pages.length) return
-  const index = Math.min(pages.length - 1, Math.floor((voiceProgress.value / 100) * pages.length))
-  const page = Number(pages[index])
-  if (Number.isFinite(page) && page !== Number(lessonInfo.value.currentPage)) lessonStore.setCurrentPage(page)
+const startExplain = () => {
+  if (
+    activeSpeechPage === safeCurrentPage.value
+    && explainStatus.value === 'paused'
+    && ((activePlaybackMode === 'speech' && activeUtterance) || (activePlaybackMode === 'audio' && activeAudio))
+  ) {
+    resumeExplain()
+    return
+  }
+  playPreGeneratedAudio()
 }
-const runVoiceProgress = () => {
-  clearVoiceTimer()
-  voiceTimer = setInterval(() => {
-    if (explainStatus.value !== 'explaining') return
-    voiceProgress.value = Math.min(100, voiceProgress.value + 1.6)
-    syncPageByProgress()
-    if (voiceProgress.value >= 100) lessonStore.setExplainStatus('paused')
-  }, 500)
+const pauseExplain = () => {
+  if (activePlaybackMode === 'audio' && activeAudio && explainStatus.value === 'explaining') {
+    activeAudio.pause()
+  } else if (typeof window !== 'undefined' && window.speechSynthesis && explainStatus.value === 'explaining') {
+    window.speechSynthesis.pause()
+  }
+  speechElapsedBeforePauseMs += speechStartedAt ? performance.now() - speechStartedAt : 0
+  speechStartedAt = 0
+  clearSpeechProgressTimer()
+  playTeacherIdle()
+  lessonStore.setExplainStatus('paused')
 }
+const resumeExplain = () => {
+  if (typeof window === 'undefined' || !window.speechSynthesis) {
+    if (activePlaybackMode === 'audio' && activeAudio) {
+      lessonStore.setExplainStatus('explaining')
+      playTeacherTalk()
+      activeAudio.play().catch(() => {})
+    }
+    return
+  }
 
-const startExplain = () => { if (voiceProgress.value >= 100) voiceProgress.value = 0; lessonStore.setExplainStatus('explaining') }
-const pauseExplain = () => lessonStore.setExplainStatus('paused')
-const resumeExplain = () => { if (voiceProgress.value >= 100) voiceProgress.value = 0; lessonStore.setExplainStatus('explaining') }
+  if (activePlaybackMode === 'audio' && activeAudio) {
+    lessonStore.setExplainStatus('explaining')
+    playTeacherTalk()
+    activeAudio.play().catch(() => {})
+    return
+  }
+
+  if (activeSpeechPage !== safeCurrentPage.value || !activeUtterance) {
+    playPreGeneratedAudio()
+    return
+  }
+
+  speechStartedAt = performance.now()
+  lessonStore.setExplainStatus('explaining')
+  playTeacherTalk()
+  beginSpeechProgress()
+  window.speechSynthesis.resume()
+}
 
 const goPrevPage = () => { if (canPrevPage.value) lessonStore.setCurrentPage(safeCurrentPage.value - 1) }
 const goNextPage = () => { if (canNextPage.value) lessonStore.setCurrentPage(safeCurrentPage.value + 1) }
@@ -285,16 +993,13 @@ const goToPage = (page) => {
 
 const handleSectionChange = (sectionId) => {
   lessonStore.setCurrentSection(sectionId)
-  voiceProgress.value = 0
   if (previewSlideCount.value > 0) {
     const targetIndex = sectionOptions.value.findIndex((item) => item.sectionId === sectionId)
     if (targetIndex >= 0) {
       lessonStore.setCurrentPage(Math.min(previewSlideCount.value, targetIndex + 1))
     }
-  } else {
-    syncPageByProgress()
   }
-  if (explainStatus.value !== 'paused') lessonStore.setExplainStatus('explaining')
+  updateOverallVoiceProgress(lessonInfo.value.currentPage || 1, 0)
   catalogOpen.value = false
 }
 const handleQaFinished = async (payload) => {
@@ -357,20 +1062,29 @@ const resetHideTimer = () => {
 }
 
 watch(() => explainStatus.value, (s) => {
-  if (s === 'explaining') { runVoiceProgress(); resetHideTimer() }
-  else { clearVoiceTimer(); controlsVisible.value = true; clearTimeout(hideControlsTimer); scheduleLearningProgressReport() }
+  if (s === 'explaining') { resetHideTimer() }
+  else { controlsVisible.value = true; clearTimeout(hideControlsTimer); scheduleLearningProgressReport() }
 })
 watch(() => `${currentLessonId.value}:${safeCurrentPage.value}`, () => {
   previewImageFailed.value = false
   previewImageVersion.value += 1
+  if (suppressPageReplay) {
+    suppressPageReplay = false
+    return
+  }
+  if (explainStatus.value === 'explaining') {
+    playPreGeneratedAudio()
+  } else {
+    stopSpeech({ resetProgress: true, keepStatus: true })
+  }
 })
 watch(() => `${currentLessonId.value}:${lessonInfo.value.currentSectionId}:${progressReportBucket.value}`, () => {
   scheduleLearningProgressReport()
 })
 watch(() => route.query, () => { syncContext(); loadNote(); loadPreviewMeta() }, { deep: true })
 watch(() => noteText.value, persistNote)
-onMounted(() => { syncContext(); loadNote(); loadPreviewMeta(); scheduleLearningProgressReport() })
-onBeforeUnmount(() => { clearVoiceTimer(); clearTimeout(hideControlsTimer); clearPreviewPollTimer(); clearTimeout(progressTrackTimer) })
+onMounted(() => { syncContext(); loadNote(); loadPreviewMeta(); loadNarrationScript(); loadAudioDurations(); scheduleLearningProgressReport(); initVirtualTeacher() })
+onBeforeUnmount(() => { clearVoiceTimer(); clearTimeout(hideControlsTimer); clearPreviewPollTimer(); clearTimeout(progressTrackTimer); clearTeacherReadyTimer(); clearTeacherTalkLoopTimer(); stopSpeech({ keepStatus: true }) })
 </script>
 
 <template>
@@ -387,9 +1101,9 @@ onBeforeUnmount(() => { clearVoiceTimer(); clearTimeout(hideControlsTimer); clea
         </button>
 
         <div class="topbar-meta">
-          <span class="topbar-course">{{ courseInfo.courseName }}</span>
+          <span class="topbar-course">{{ currentLessonId === GENERATED_SMART_LESSON.lessonId ? '线性代数' : courseInfo.courseName }}</span>
           <span class="topbar-sep">/</span>
-          <span class="topbar-lesson">{{ lessonInfo.lessonTitle || '课程预览' }}</span>
+          <span class="topbar-lesson">{{ currentLessonId === GENERATED_SMART_LESSON.lessonId ? '课程学习' : (lessonInfo.lessonTitle || '课程预览') }}</span>
         </div>
 
         <div class="topbar-right">
@@ -466,6 +1180,18 @@ onBeforeUnmount(() => { clearVoiceTimer(); clearTimeout(hideControlsTimer); clea
                 :src="currentPreviewImageUrl" :alt="`PPT 第 ${safeCurrentPage} 页`" @error="handlePreviewImageError">
               <div v-else class="slide-empty-state">
                 {{ previewPlaceholderText }}
+              </div>
+            </div>
+            <div v-show="virtualTeacherVisible" class="virtual-teacher-layer" aria-hidden="true">
+              <div class="virtual-teacher-shell">
+                <iframe
+                  ref="teacherIframeRef"
+                  class="virtual-teacher-frame"
+                  :src="virtualTeacherSrc"
+                  scrolling="no"
+                  allowtransparency="true"
+                  @load="handleTeacherIframeLoad"
+                />
               </div>
             </div>
 
@@ -617,10 +1343,10 @@ onBeforeUnmount(() => { clearVoiceTimer(); clearTimeout(hideControlsTimer); clea
           </div>
         </div>
         <div class="chat-body">
-          <ChatBox :course-id="platformContext.courseId || courseInfo.courseId" :user-id="platformContext.userId"
+          <ChatBox ref="chatBoxRef" :course-id="platformContext.courseId || courseInfo.courseId" :user-id="platformContext.userId"
             :lesson-id="platformContext.lessonId || lessonInfo.lessonId"
             :current-section-id="lessonInfo.currentSectionId" :current-page="safeCurrentPage"
-            :session-id="sessionInfo.sessionId"
+            :session-id="sessionInfo.sessionId" :custom-submit="handleChatSubmit"
             @after-answer="handleQaFinished" />
         </div>
       </div>
@@ -1066,6 +1792,32 @@ onBeforeUnmount(() => { clearVoiceTimer(); clearTimeout(hideControlsTimer); clea
   max-width: 1120px;
   text-align: center;
   animation: contentIn 0.35s ease;
+}
+
+.virtual-teacher-layer {
+  position: absolute;
+  right: 104px;
+  bottom: 60px;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.virtual-teacher-shell {
+  width: clamp(72px, 7.5vw, 110px);
+  aspect-ratio: 9 / 16;
+  border-radius: 18px;
+  overflow: hidden;
+  background: transparent;
+  filter: drop-shadow(0 18px 24px rgba(15, 23, 42, 0.18));
+}
+
+.virtual-teacher-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  background: transparent;
+  pointer-events: none;
 }
 
 .slide-preview-image {

@@ -4,6 +4,9 @@ import { mockCourseInfo, mockLessonMeta } from '@/mock/data'
 const STORAGE_KEY = 'smart-class-demo-state-v1'
 const KNOWLEDGE_BASE_KEY = 'smart-class-demo-kb-v1'
 const FAKE_AI_DELAY_MS = 5000
+const PAGE_SEVEN_EXPECTED_ANSWER = '我觉得是因为两个星体的向心力相等，质量大的星体，需要的向心力也更大，但是它们的向心力又是相等的，因此只能减小自己的半径来维持圆周运动。'
+const PAGE_SEVEN_SUCCESS_REPLY = '回答的很准确，看来你掌握的不错！'
+const PAGE_SEVEN_RETRY_REPLY = '可以再结合“向心力大小相等”和“质量越大越靠近中心”这两个点再组织一下。'
 const STAR_ORBIT_DEMO_QUESTION = '什么是双星问题'
 const STAR_ORBIT_DEMO_ANSWER = '双星系统是指两颗恒星依靠两者之间的万有引力环绕着共同中心在各自圆轨道上稳定运行的恒星系统。双星系统由两颗相距较近的恒星组成，在相互之间的万有引力作用下，绕连线上的一点做周期相同的匀速圆周运动。'
 const PARSE_TASK_DELAY_MS = 4800
@@ -100,7 +103,7 @@ const buildScriptStructure = (sections = [], opening = '') => sections.map((sect
 const isStarOrbitLesson = ({ lessonId = '', fileName = '', courseName = '' } = {}) => (
   String(lessonId) === GENERATED_SMART_LESSON.lessonId
   || String(fileName).includes('双星问题')
-  || String(courseName).includes('星轨探微')
+  || String(courseName).includes('线性代数')
 )
 
 const buildDefaultLesson = (lessonId = mockLessonMeta.lessonId || 'lesson-demo-001', overrides = {}) => {

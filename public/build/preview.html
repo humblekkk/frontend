@@ -1,0 +1,258 @@
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网页嵌套 Cocos 游戏</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(255,255,255,0.9), rgba(255,255,255,0) 28%),
+                linear-gradient(135deg, #fdf2f8 0%, #e0f2fe 45%, #ecfccb 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: sans-serif;
+            gap: 24px;
+        }
+
+        .game-window {
+            /* 高度跟随窗口，宽度按 9:16 自动算 */
+            height: 30vh;
+            aspect-ratio: 9 / 16;
+            background-color: transparent;
+            border-radius: 12px;
+            box-shadow: none;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .window-header {
+            height: 40px;
+            background-color: #333;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            font-size: 14px;
+            user-select: none;
+        }
+
+        .window-controls {
+            display: flex;
+            gap: 8px;
+            margin-right: 15px;
+        }
+        .window-controls span {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .dot-red { background-color: #ff5f56; }
+        .dot-yellow { background-color: #ffbd2e; }
+        .dot-green { background-color: #27c93f; }
+
+        .window-content {
+            flex: 1;
+            position: relative;
+            background: transparent;
+        }
+
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+            background: transparent;
+        }
+
+        .control-panel {
+            width: 280px;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .control-panel h3 {
+            margin: 0 0 4px 0;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .anim-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .anim-row button {
+            width: 110px;
+            flex-shrink: 0;
+            padding: 8px 0;
+            border: none;
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .anim-row button:active {
+            transform: scale(0.96);
+        }
+
+        .anim-row input[type="range"] {
+            flex: 1;
+            height: 4px;
+            accent-color: #666;
+        }
+
+        .anim-row .spd {
+            font-size: 11px;
+            color: #333;
+            min-width: 32px;
+            text-align: right;
+        }
+
+        .btn-idle1 { background: #e8f5e9; color: #2e7d32; }
+        .btn-idle2 { background: #e3f2fd; color: #1565c0; }
+        .btn-talk { background: #fff3e0; color: #e65100; }
+        .btn-talk-imm { background: #fce4ec; color: #c62828; }
+        .btn-talk-cmp { background: #f3e5f5; color: #6a1b9a; }
+        .btn-stop { background: #333; color: #fff; width: 100% !important; }
+
+        .status {
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+            min-height: 18px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-window">
+        <div class="window-content">
+            <iframe id="gameIframe" src="./web-mobile-001/index.html?level=2" scrolling="no" allowtransparency="true"></iframe>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <h3>动画控制</h3>
+
+        <div class="anim-row">
+            <button class="btn-idle1" onclick="callAPI('playIdle1','spd-idle1')">待机1</button>
+            <input type="range" id="spd-idle1" min="0.1" max="3" step="0.1" value="0.4" oninput="showSpd(this)">
+            <span class="spd">0.4x</span>
+        </div>
+        <div class="anim-row">
+            <button class="btn-idle2" onclick="callAPI('playIdle2','spd-idle2')">待机2</button>
+            <input type="range" id="spd-idle2" min="0.1" max="3" step="0.1" value="0.4" oninput="showSpd(this)">
+            <span class="spd">0.4x</span>
+        </div>
+        <div class="anim-row">
+            <button class="btn-talk" onclick="callAPI('playTalk','spd-talk')">说话</button>
+            <input type="range" id="spd-talk" min="0.1" max="3" step="0.1" value="0.3" oninput="showSpd(this)">
+            <span class="spd">0.3x</span>
+        </div>
+        <div class="anim-row">
+            <button class="btn-talk-imm" onclick="callAPI('playTalkImmediately','spd-talk-imm')">立刻说话</button>
+            <input type="range" id="spd-talk-imm" min="0.1" max="3" step="0.1" value="0.3" oninput="showSpd(this)">
+            <span class="spd">0.3x</span>
+        </div>
+        <div class="anim-row">
+            <button class="btn-talk-cmp" onclick="callAPI('playTalkCompletely','spd-talk-cmp')">完整说话</button>
+            <input type="range" id="spd-talk-cmp" min="0.1" max="3" step="0.1" value="0.2" oninput="showSpd(this)">
+            <span class="spd">0.2x</span>
+        </div>
+        <div class="anim-row">
+            <button class="btn-stop" onclick="callAPI('stop')">停止动画</button>
+        </div>
+
+        <div class="status" id="status">等待游戏加载...</div>
+    </div>
+
+    <script>
+        function showSpd(el) {
+            el.parentElement.querySelector('.spd').textContent = parseFloat(el.value).toFixed(1) + 'x';
+        }
+
+        function getAPI() {
+            var iframe = document.getElementById('gameIframe');
+            return iframe && iframe.contentWindow && iframe.contentWindow.teacherAPI;
+        }
+
+        function makeIframeTransparent() {
+            var iframe = document.getElementById('gameIframe');
+            if (!iframe || !iframe.contentWindow || !iframe.contentDocument) return;
+            try {
+                var doc = iframe.contentDocument;
+                var html = doc.documentElement;
+                var body = doc.body;
+                var gameDiv = doc.getElementById('GameDiv');
+                var container = doc.getElementById('Cocos3dGameContainer');
+                var canvas = doc.getElementById('GameCanvas');
+
+                if (html) {
+                    html.style.background = 'transparent';
+                }
+                if (body) {
+                    body.style.background = 'transparent';
+                    body.style.backgroundColor = 'transparent';
+                }
+                if (gameDiv) {
+                    gameDiv.style.background = 'transparent';
+                    gameDiv.style.backgroundColor = 'transparent';
+                }
+                if (container) {
+                    container.style.background = 'transparent';
+                    container.style.backgroundColor = 'transparent';
+                }
+                if (canvas) {
+                    canvas.style.background = 'transparent';
+                    canvas.style.backgroundColor = 'transparent';
+                }
+            } catch (err) {
+                console.warn('设置 iframe 背景透明失败', err);
+            }
+        }
+
+        function callAPI(method, sliderId) {
+            var api = getAPI();
+            if (!api || !api[method]) {
+                document.getElementById('status').textContent = '游戏未就绪，请稍候';
+                return;
+            }
+            if (method === 'stop') {
+                api.stop();
+                document.getElementById('status').textContent = '已停止';
+                return;
+            }
+            var speed = sliderId ? parseFloat(document.getElementById(sliderId).value) : 1;
+            api[method](speed);
+            document.getElementById('status').textContent = method + '  speed=' + speed.toFixed(1);
+        }
+
+        var checkReady = setInterval(function() {
+            makeIframeTransparent();
+            if (getAPI()) {
+                document.getElementById('status').textContent = '游戏已就绪';
+                clearInterval(checkReady);
+            }
+        }, 500);
+
+        document.getElementById('gameIframe').addEventListener('load', function() {
+            setTimeout(makeIframeTransparent, 100);
+        });
+    </script>
+
+</body>
+</html>
